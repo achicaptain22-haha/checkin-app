@@ -247,7 +247,7 @@ function Owner(props) {
     return React.createElement("div", { style: { minHeight: "100vh", background: C.bg } }, React.createElement("div", { style: { background: C.blue, color: "#fff", padding: "16px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: "12px", color: C.blueLight } }, "เจ้าของร้าน"), React.createElement("div", { style: { fontSize: "18px", fontWeight: 600 } }, "แดชบอร์ดผู้จัดการ")), React.createElement("button", { onClick: props.onLogout, style: { background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "ออกจากระบบ"))), React.createElement("div", { style: { display: "flex", gap: "6px", padding: "10px 14px", overflowX: "auto" } }, [["emp", "พนักงาน"], ["branch", "สาขา"], ["set", "ตั้งค่า"], ["pay", "เงินเดือน"]].map((kv) => React.createElement("button", { key: kv[0], onClick: () => setTab(kv[0]), style: { padding: "8px 14px", borderRadius: "20px", border: "none", whiteSpace: "nowrap", background: tab === kv[0] ? C.blue : "#fff", color: tab === kv[0] ? "#fff" : C.sub, fontSize: "14px", cursor: "pointer" } }, kv[1]))), React.createElement("div", { style: { padding: "0 14px 24px" } }, tab === "emp" ? React.createElement(Employees, null) :
         tab === "branch" ? React.createElement(Branches, null) :
             tab === "set" ? React.createElement(SettingsTab, null) :
-                React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "24px", textAlign: "center", color: C.sub, whiteSpace: "pre-line" } }, "💰 ระบบคิดเงินเดือน + สลิป\nกำลังพัฒนา — ขั้นต่อไป")));
+                React.createElement(Payroll, null)));
 }
 function Employees() {
     const [list, setList] = useState([]);
@@ -328,6 +328,131 @@ function SettingsTab() {
     if (!s)
         return React.createElement("div", { style: { color: C.sub, padding: "20px", textAlign: "center" } }, "กำลังโหลด...");
     return React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600, marginBottom: "10px" } }, "ตั้งค่าการคิดเงิน (แก้ได้เฉพาะเจ้าของ)"), fInput("ประกันสังคม (0.05 = 5%)", s.sso_rate, (v) => setS({ ...s, sso_rate: v }), "number"), fInput("เพดานฐานประกันสังคม (บาท)", s.sso_cap_salary, (v) => setS({ ...s, sso_cap_salary: v }), "number"), fInput("OT บาท/ชั่วโมง", s.ot_rate_per_hour, (v) => setS({ ...s, ot_rate_per_hour: v }), "number"), fInput("สายสะสมไม่เกินกี่นาที/เดือน (ไม่หัก)", s.late_grace_min, (v) => setS({ ...s, late_grace_min: v }), "number"), fInput("เกินแล้วหักนาทีละ (บาท)", s.late_rate_per_min, (v) => setS({ ...s, late_rate_per_min: v }), "number"), fInput("เพดานหักเงินกู้/เดือน (บาท)", s.loan_cap_default, (v) => setS({ ...s, loan_cap_default: v }), "number"), msg ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "6px 0" } }, msg) : null, React.createElement("button", { onClick: save, style: { ...bigBtn, background: C.blue, color: "#fff", marginTop: "6px" } }, "บันทึกการตั้งค่า"));
+}
+// ---------- PAYROLL (คิดเงินเดือน + สลิป) ----------
+function thisPeriod() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function Payroll() {
+    const [period, setPeriod] = useState(thisPeriod());
+    const [emps, setEmps] = useState([]);
+    const [settings, setSettings] = useState(null);
+    const [sel, setSel] = useState(null); // พนักงานที่เลือก
+    const [calc, setCalc] = useState(null); // ผลคำนวณ + ช่องแก้
+    const [msg, setMsg] = useState("");
+    const [busy, setBusy] = useState(false);
+    useEffect(() => {
+        (async () => {
+            const e = await sb.from("employees").select("*").eq("company_id", COMPANY_ID).eq("active", true).order("created_at");
+            const s = await sb.from("settings").select("*").eq("company_id", COMPANY_ID).single();
+            setEmps(e.data || []);
+            setSettings(s.data);
+        })();
+    }, []);
+    async function openEmp(emp) {
+        setSel(emp);
+        setMsg("");
+        setBusy(true);
+        const start = period + "-01";
+        const [y, m] = period.split("-").map(Number);
+        const endDate = new Date(y, m, 0);
+        const end = period + "-" + String(endDate.getDate()).padStart(2, "0");
+        // ดึงตอกบัตรเดือนนี้
+        const att = await sb.from("attendance_logs").select("*").eq("employee_id", emp.id).gte("work_date", start).lte("work_date", end);
+        const logs = att.data || [];
+        const workDays = new Set(logs.filter((l) => l.punch_type === "in").map((l) => l.work_date)).size;
+        const lateMin = logs.filter((l) => l.punch_type === "in").reduce((a, l) => a + (l.late_minutes || 0), 0);
+        const otMin = logs.filter((l) => l.punch_type === "out").reduce((a, l) => a + (l.ot_minutes || 0), 0);
+        // เงินกู้คงเหลือ
+        const ln = await sb.from("loans").select("*").eq("employee_id", emp.id).eq("status", "active");
+        const loan = (ln.data && ln.data[0]) ? ln.data[0] : null;
+        const st = settings || {};
+        const otRate = Number(st.ot_rate_per_hour || 25);
+        const graceMin = Number(st.late_grace_min || 10);
+        const lateRate = Number(st.late_rate_per_min || 5);
+        const ssoRate = Number(st.sso_rate || 0.05);
+        const ssoCap = Number(st.sso_cap_salary || 15000);
+        const loanCap = loan ? Number(loan.per_month_cap || st.loan_cap_default || 3000) : 0;
+        const base = emp.pay_type === "monthly" ? Number(emp.base_salary || 0) : Number(emp.daily_wage || 0) * workDays;
+        const otPay = Math.round((otMin / 60) * otRate);
+        const lateChargeable = Math.max(0, lateMin - graceMin);
+        const lateDeduct = lateChargeable * lateRate;
+        const ssoBase = Math.min(base, ssoCap);
+        const ssoDeduct = Math.round(ssoBase * ssoRate);
+        const loanDeduct = loan ? Math.min(loanCap, Number(loan.remaining || 0)) : 0;
+        setCalc({
+            workDays, lateMin, otMin, loan,
+            base: String(base), ot_pay: String(otPay),
+            bonus: "0", diligence: "0", commission: "0",
+            late_deduct: String(lateDeduct), absent_deduct: "0",
+            sso_deduct: String(ssoDeduct), loan_deduct: String(loanDeduct),
+            other_deduct: "0",
+        });
+        setBusy(false);
+    }
+    function net(c) {
+        const earn = Number(c.base) + Number(c.ot_pay) + Number(c.bonus) + Number(c.diligence) + Number(c.commission);
+        const ded = Number(c.late_deduct) + Number(c.absent_deduct) + Number(c.sso_deduct) + Number(c.loan_deduct) + Number(c.other_deduct);
+        return earn - ded;
+    }
+    async function saveSlip() {
+        if (!sel || !calc)
+            return;
+        setBusy(true);
+        setMsg("");
+        try {
+            const payload = { employee_id: sel.id, period,
+                base_pay: Number(calc.base), ot_pay: Number(calc.ot_pay), bonus: Number(calc.bonus),
+                diligence: Number(calc.diligence), commission: Number(calc.commission),
+                late_deduct: Number(calc.late_deduct), absent_deduct: Number(calc.absent_deduct),
+                sso_deduct: Number(calc.sso_deduct), loan_deduct: Number(calc.loan_deduct),
+                other_deduct: Number(calc.other_deduct), net_pay: net(calc) };
+            // ลบสลิปเดิมของงวดนี้ก่อน (ถ้ามี) แล้วบันทึกใหม่
+            await sb.from("payslips").delete().eq("employee_id", sel.id).eq("period", period);
+            const r = await sb.from("payslips").insert(payload);
+            if (r.error)
+                throw r.error;
+            // หักเงินกู้: ทบยอด
+            if (calc.loan && Number(calc.loan_deduct) > 0) {
+                const remain = Math.max(0, Number(calc.loan.remaining) - Number(calc.loan_deduct));
+                await sb.from("loan_deductions").insert({ loan_id: calc.loan.id, period, amount: Number(calc.loan_deduct), remaining_after: remain });
+                await sb.from("loans").update({ remaining: remain, status: remain <= 0 ? "closed" : "active" }).eq("id", calc.loan.id);
+            }
+            setMsg("✅ บันทึกสลิปเรียบร้อย (" + net(calc).toLocaleString() + " บาท)");
+        }
+        catch (e) {
+            setMsg("บันทึกไม่สำเร็จ: " + (e.message || e));
+        }
+        setBusy(false);
+    }
+    function printSlip() {
+        if (!sel || !calc)
+            return;
+        const c = calc;
+        const w = window.open("", "_blank");
+        if (!w)
+            return;
+        const row = (l, v, minus = false) => "<tr><td style='padding:4px 0'>" + l + "</td><td style='text-align:right'>" + (minus ? "-" : "") + v.toLocaleString() + "</td></tr>";
+        w.document.write("<html><head><meta charset='utf-8'><title>สลิปเงินเดือน</title>" +
+            "<style>body{font-family:sans-serif;max-width:380px;margin:20px auto;color:#0f172a}h2{margin:0}table{width:100%;border-collapse:collapse;font-size:14px}hr{border:none;border-top:1px solid #ccc}</style></head><body>" +
+            "<h2>สลิปเงินเดือน</h2><div style='color:#666;font-size:13px'>ร้านเบเกอรี่บรรจุภัณฑ์ · งวด " + period + "</div><hr>" +
+            "<div style='font-size:15px;font-weight:600;margin:8px 0'>" + sel.full_name + "</div>" +
+            "<div style='font-size:12px;color:#666'>มาทำงาน " + c.workDays + " วัน · OT " + c.otMin + " นาที · สาย " + c.lateMin + " นาที</div><hr>" +
+            "<b>รายได้</b><table>" + row("เงินเดือน/ค่าจ้าง", Number(c.base)) + row("OT", Number(c.ot_pay)) + row("โบนัส", Number(c.bonus)) + row("เบี้ยขยัน", Number(c.diligence)) + row("คอมมิชชั่น", Number(c.commission)) + "</table><hr>" +
+            "<b>รายการหัก</b><table>" + row("หักสาย", Number(c.late_deduct), true) + row("หักขาด/ลา", Number(c.absent_deduct), true) + row("ประกันสังคม", Number(c.sso_deduct), true) + row("หักเงินกู้", Number(c.loan_deduct), true) + row("หักอื่นๆ", Number(c.other_deduct), true) + "</table><hr>" +
+            "<table style='font-size:16px;font-weight:700'>" + row("เงินสุทธิ", net(c)) + "</table>" +
+            "<div style='margin-top:20px;font-size:12px;color:#999'>พิมพ์เมื่อ " + new Date().toLocaleString("th-TH") + "</div>" +
+            "</body></html>");
+        w.document.close();
+        w.print();
+    }
+    // ----- รายชื่อพนักงาน -----
+    if (!sel)
+        return React.createElement("div", null, React.createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center", margin: "4px 0 12px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600, flex: 1 } }, "คิดเงินเดือน"), React.createElement("input", { type: "month", value: period, onChange: (e) => setPeriod(e.target.value), style: { padding: "8px", borderRadius: "8px", border: "1px solid " + C.line, fontSize: "13px" } })), React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "10px" } }, "เลือกพนักงานเพื่อคิดเงินเดือนงวด " + period), React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, emps.map(e => React.createElement("button", { key: e.id, onClick: () => openEmp(e), style: { background: "#fff", borderRadius: "12px", padding: "12px", display: "flex", alignItems: "center", gap: "10px", border: "none", cursor: "pointer", textAlign: "left" } }, React.createElement("div", { style: { width: "34px", height: "34px", borderRadius: "50%", background: C.greenLight, display: "flex", alignItems: "center", justifyContent: "center" } }, "👤"), React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, e.full_name), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, e.pay_type === "monthly" ? "รายเดือน" : "รายวัน")), React.createElement("div", { style: { fontSize: "18px", color: C.sub } }, "›")))));
+    // ----- หน้าคิดเงินรายคน -----
+    if (busy && !calc)
+        return React.createElement("div", { style: { padding: "20px", textAlign: "center", color: C.sub } }, "กำลังคำนวณ...");
+    const c = calc;
+    const moneyRow = (label, key, minus = false) => React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" } }, React.createElement("div", { style: { flex: 1, fontSize: "13px", color: minus ? C.red : C.ink } }, (minus ? "− " : "+ ") + label), React.createElement("input", { type: "number", value: c[key], onChange: (e) => setCalc({ ...c, [key]: e.target.value }), style: { width: "110px", padding: "8px", borderRadius: "8px", border: "1px solid " + C.line, textAlign: "right", fontSize: "14px" } }));
+    return React.createElement("div", null, React.createElement("button", { onClick: () => { setSel(null); setCalc(null); setMsg(""); }, style: { background: "none", border: "none", color: C.blue, fontSize: "14px", cursor: "pointer", marginBottom: "8px", padding: 0 } }, "‹ กลับ"), React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px" } }, React.createElement("div", { style: { fontSize: "16px", fontWeight: 600 } }, sel.full_name), React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "4px" } }, "งวด " + period), React.createElement("div", { style: { fontSize: "12px", color: C.green, marginBottom: "12px" } }, "มาทำงาน " + c.workDays + " วัน · OT " + c.otMin + " นาที · สาย " + c.lateMin + " นาที (ดึงจากตอกบัตรจริง)"), React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: C.green, marginBottom: "6px" } }, "รายได้"), moneyRow("เงินเดือน/ค่าจ้าง", "base"), moneyRow("OT", "ot_pay"), moneyRow("โบนัส", "bonus"), moneyRow("เบี้ยขยัน", "diligence"), moneyRow("คอมมิชชั่น", "commission"), React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, color: C.red, margin: "12px 0 6px" } }, "รายการหัก"), moneyRow("หักสาย", "late_deduct", true), moneyRow("หักขาด/ลา", "absent_deduct", true), moneyRow("ประกันสังคม", "sso_deduct", true), moneyRow("หักเงินกู้", "loan_deduct", true), moneyRow("หักอื่นๆ (เงินขาด/ของเสีย)", "other_deduct", true), c.loan ? React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginTop: "4px" } }, "ยอดกู้คงเหลือ " + Number(c.loan.remaining).toLocaleString() + " บาท (หักเดือนนี้แล้วเหลือ " + Math.max(0, Number(c.loan.remaining) - Number(c.loan_deduct)).toLocaleString() + ")") : null, React.createElement("div", { style: { borderTop: "2px solid " + C.line, marginTop: "12px", paddingTop: "10px", display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 700 } }, "เงินสุทธิ"), React.createElement("div", { style: { fontSize: "22px", fontWeight: 700, color: C.green } }, net(c).toLocaleString() + " ฿")), msg ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "8px 0" } }, msg) : null, React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "12px" } }, React.createElement("button", { onClick: saveSlip, disabled: busy, style: { ...bigBtn, flex: 1, background: busy ? "#94a3b8" : C.blue, color: "#fff" } }, busy ? "กำลังบันทึก..." : "บันทึกสลิป"), React.createElement("button", { onClick: printSlip, style: { ...bigBtn, flex: 1, background: C.greenLight, color: C.greenInk } }, "🖨️ พิมพ์สลิป"))));
 }
 function App() {
     const [session, setSession] = useState(null);
