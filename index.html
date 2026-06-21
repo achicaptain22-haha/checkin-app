@@ -9,9 +9,11 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     html, body, #root { height: 100%; margin: 0; }
     body { font-family: "Sarabun","Noto Sans Thai",sans-serif; background:#f1f5f9; }
+    * { box-sizing: border-box; }
   </style>
   <script>
     window.addEventListener('error', function(e){
@@ -32,303 +34,323 @@
   <div id="root"><div style="padding:24px;font-family:Sarabun,sans-serif;color:#64748b;text-align:center">กำลังโหลด...</div></div>
   <script>
 "use strict";
-const { useState, useRef, useEffect, useMemo } = window.React;
 const React = window.React;
 const ReactDOM = window.ReactDOM;
+const { useState, useRef, useEffect } = React;
+const sblib = window.supabase;
 function showErr(msg) {
     const r = document.getElementById('root');
     if (r) {
         r.innerHTML = '<div style="padding:16px;font-family:Sarabun,sans-serif;color:#b91c1c;white-space:pre-wrap;font-size:13px;line-height:1.6">⚠️ ' + msg + '</div>';
     }
 }
-/**
- * แอปเช็คอินพนักงาน (Standalone PWA) — ตอกบัตร 4 ครั้ง/วัน
- * ------------------------------------------------------------------
- * ลำดับการตอกบัตร: เข้างาน(เช้า) -> พักเที่ยงออก -> หลังพักเที่ยงเข้า -> เลิกงาน
- * แต่ละครั้งต้อง: เซลฟี่ (เห็นหน้า+เห็นร้าน) + พิกัด GPS ในรัศมีร้าน
- * - คำนวณสาย (ตอน "เข้างาน") และ OT/ออกก่อนเวลา (ตอน "เลิกงาน")
- * - หลายกะ / หลายบริษัท / หลายสาขา
- * - "โหมดสาธิต" สำหรับ preview ที่กล้อง/GPS ถูกบล็อก
- *
- * ระบบจริง: insert attendance_logs ทุกครั้งที่ตอก (type=in/lunch_out/lunch_in/out)
- * แล้วหน้า Timesheet รวมยอด + แก้ไขก่อนปิดงวดคิดเงินเดือน
- */
-const COMPANIES = [
-    {
-        id: "bakery",
-        name: "ร้านเบเกอรี่บรรจุภัณฑ์",
-        branches: [
-            { id: "b1", name: "สาขาหนองคาย", lat: 17.8782, lng: 102.742, radius: 150 },
-            { id: "b2", name: "สาขาอุดรธานี", lat: 17.4138, lng: 102.787, radius: 150 },
-        ],
-        shifts: [
-            { id: "morning", name: "กะเช้า", start: "07:00", end: "16:00" },
-            { id: "afternoon", name: "กะบ่าย", start: "13:00", end: "22:00" },
-            { id: "night", name: "กะดึก", start: "22:00", end: "06:00" },
-        ],
-    },
-    {
-        id: "jimart",
-        name: "jimart ค้าส่ง",
-        branches: [{ id: "j01", name: "คลังกลาง อุดรธานี", lat: 17.4, lng: 102.8, radius: 200 }],
-        shifts: [{ id: "day", name: "กะปกติ", start: "08:00", end: "17:00" }],
-    },
-];
-// ลำดับการตอกบัตร 4 ครั้ง/วัน
-const PUNCHES = [
-    { key: "in", label: "เข้างาน (เช้า)", compare: "in" },
-    { key: "lunch_out", label: "พักเที่ยง (ออก)", compare: null },
-    { key: "lunch_in", label: "หลังพักเที่ยง (เข้า)", compare: null },
-    { key: "out", label: "เลิกงาน", compare: "out" },
-];
-function distanceMeters(a, b) {
-    const R = 6371000;
-    const toRad = (d) => (d * Math.PI) / 180;
-    const dLat = toRad(b.lat - a.lat);
-    const dLng = toRad(b.lng - a.lng);
-    const lat1 = toRad(a.lat);
-    const lat2 = toRad(b.lat);
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-    return Math.round(2 * R * Math.asin(Math.sqrt(h)));
-}
-const toMin = (hhmm) => {
-    const [h, m] = hhmm.split(":").map(Number);
-    return h * 60 + m;
+const SUPABASE_URL = "https://wyifwaudzgtgjafirwnv.supabase.co";
+const SUPABASE_KEY = "sb_publishable_-nIVIHn_jWkwrd2uKm9oTg_MahRiAVk";
+const COMPANY_ID = "11111111-1111-1111-1111-111111111111";
+const sb = sblib.createClient(SUPABASE_URL, SUPABASE_KEY);
+const C = {
+    green: "#0F6E56", greenLight: "#E1F5EE", greenInk: "#04342C",
+    blue: "#185FA5", blueLight: "#E6F1FB",
+    ink: "#0f172a", sub: "#64748b", line: "#e2e8f0", bg: "#f1f5f9", red: "#b91c1c",
 };
-function shiftStatus(date, shift, compare) {
-    if (!compare)
-        return null;
-    const nowMin = date.getHours() * 60 + date.getMinutes();
-    const target = compare === "in" ? toMin(shift.start) : toMin(shift.end);
-    let diff = nowMin - target;
-    if (diff > 720)
-        diff -= 1440;
-    if (diff < -720)
-        diff += 1440;
-    if (compare === "in") {
-        if (diff > 0)
-            return { tone: "bad", label: `สายไป ${diff} นาที` };
-        if (diff === 0)
-            return { tone: "ok", label: "ตรงเวลา" };
-        return { tone: "ok", label: `ก่อนเวลา ${-diff} นาที` };
-    }
-    else {
-        if (diff > 0)
-            return { tone: "ot", label: `OT ${diff} นาที` };
-        if (diff === 0)
-            return { tone: "ok", label: "ตรงเวลา" };
-        return { tone: "bad", label: `ก่อนเวลา ${-diff} นาที` };
-    }
+function distanceMeters(a, b, c, d) {
+    const R = 6371000, toRad = (x) => x * Math.PI / 180;
+    const dLat = toRad(c - a), dLng = toRad(d - b);
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a)) * Math.cos(toRad(c)) * Math.sin(dLng / 2) ** 2;
+    return Math.round(R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s)));
 }
-const TH = { fontFamily: '"Sarabun","Noto Sans Thai","Prompt",sans-serif' };
-function CheckIn() {
-    const [companyId, setCompanyId] = useState("bakery");
-    const [branchId, setBranchId] = useState("b1");
-    const [shiftId, setShiftId] = useState("morning");
-    const employeeName = "สมหญิง ใจดี";
-    const company = COMPANIES.find((c) => c.id === companyId);
-    const branch = company.branches.find((b) => b.id === branchId);
-    const shift = company.shifts.find((s) => s.id === shiftId) || company.shifts[0];
+function hhmm(t) { return t.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }); }
+const keyBtn = { padding: "16px 0", borderRadius: "12px", border: "1px solid " + C.line, background: "#f8fafc", fontSize: "20px", fontWeight: 600, color: C.ink, cursor: "pointer" };
+const sel = { flex: 1, padding: "10px", borderRadius: "10px", border: "1px solid " + C.line, fontSize: "14px", background: "#fff" };
+const bigBtn = { width: "100%", padding: "14px", borderRadius: "12px", border: "none", fontSize: "15px", fontWeight: 600, cursor: "pointer" };
+function fInput(label, val, on, type = "text") {
+    return React.createElement("div", { style: { marginBottom: "10px", flex: 1 } }, React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "4px" } }, label), React.createElement("input", { type, value: val, onChange: (e) => on(e.target.value),
+        style: { width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid " + C.line, fontSize: "14px", boxSizing: "border-box" } }));
+}
+function fSelect(label, val, on, opts) {
+    return React.createElement("div", { style: { marginBottom: "10px", flex: 1 } }, React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "4px" } }, label), React.createElement("select", { value: val, onChange: (e) => on(e.target.value),
+        style: { width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid " + C.line, fontSize: "14px", background: "#fff" } }, opts.map((o, i) => React.createElement("option", { key: i, value: o[0] }, o[1] || "(ไม่ระบุ)"))));
+}
+// ---------- LOGIN ----------
+function Login(props) {
+    const [pin, setPin] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState("");
+    async function doLogin() {
+        setErr("");
+        setBusy(true);
+        try {
+            const { data, error } = await sb.rpc("login_with_pin", { p_company: COMPANY_ID, p_pin: pin });
+            if (error)
+                throw error;
+            if (!data || data.length === 0) {
+                setErr("PIN ไม่ถูกต้อง ลองใหม่อีกครั้ง");
+                setBusy(false);
+                return;
+            }
+            props.onLogin(data[0]);
+        }
+        catch (e) {
+            setErr("เข้าระบบไม่ได้: " + (e.message || e));
+            setBusy(false);
+        }
+    }
+    const press = (d) => { if (pin.length < 6)
+        setPin(pin + d); };
+    return React.createElement("div", { style: { minHeight: "100vh", background: C.green, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px" } }, React.createElement("div", { style: { color: C.greenLight, fontSize: "14px", marginBottom: "4px" } }, "ร้านเบเกอรี่บรรจุภัณฑ์"), React.createElement("div", { style: { color: "#fff", fontSize: "22px", fontWeight: 600, marginBottom: "24px" } }, "เข้าสู่ระบบ"), React.createElement("div", { style: { background: "#fff", borderRadius: "20px", padding: "24px", width: "100%", maxWidth: "320px" } }, React.createElement("div", { style: { textAlign: "center", color: C.sub, fontSize: "13px", marginBottom: "10px" } }, "กรอกรหัส PIN ของคุณ"), React.createElement("div", { style: { display: "flex", justifyContent: "center", gap: "8px", marginBottom: "16px" } }, [0, 1, 2, 3, 4, 5].map((i) => React.createElement("div", { key: i, style: { width: "14px", height: "14px", borderRadius: "50%", background: i < pin.length ? C.green : "#cbd5e1" } }))), err ? React.createElement("div", { style: { color: C.red, fontSize: "13px", textAlign: "center", marginBottom: "10px" } }, err) : null, React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "10px" } }, ["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => React.createElement("button", { key: d, onClick: () => press(d), style: keyBtn }, d)).concat([
+        React.createElement("button", { key: "c", onClick: () => setPin(""), style: { ...keyBtn, fontSize: "14px", color: C.sub } }, "ล้าง"),
+        React.createElement("button", { key: "0", onClick: () => press("0"), style: keyBtn }, "0"),
+        React.createElement("button", { key: "b", onClick: () => setPin(pin.slice(0, -1)), style: { ...keyBtn, fontSize: "18px", color: C.sub } }, "⌫"),
+    ])), React.createElement("button", { onClick: doLogin, disabled: busy || pin.length < 4,
+        style: { marginTop: "16px", width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: (busy || pin.length < 4) ? "#94a3b8" : C.green, color: "#fff", fontSize: "16px", fontWeight: 600, cursor: "pointer" } }, busy ? "กำลังเข้าระบบ..." : "เข้าสู่ระบบ")), React.createElement("div", { style: { color: C.greenLight, fontSize: "12px", marginTop: "16px", opacity: 0.8 } }, "เจ้าของร้านทดสอบ: PIN 1234"));
+}
+// ---------- EMPLOYEE CHECK-IN ----------
+const PUNCHES = [{ key: "in", label: "เข้างาน (เช้า)" }, { key: "lunch_out", label: "พักเที่ยง (ออก)" }, { key: "lunch_in", label: "หลังพักเที่ยง (เข้า)" }, { key: "out", label: "เลิกงาน" }];
+function Employee(props) {
+    const me = props.session;
     const [now, setNow] = useState(new Date());
-    const [done, setDone] = useState([]); // punch records ที่ตอกแล้ววันนี้
-    const [photo, setPhoto] = useState(null);
-    const [coords, setCoords] = useState(null);
-    const [gpsError, setGpsError] = useState(null);
+    const [branches, setBranches] = useState([]);
+    const [shifts, setShifts] = useState([]);
+    const [branchId, setBranchId] = useState(me.branch_id || "");
+    const [shiftId, setShiftId] = useState(me.shift_id || "");
+    const [todayPunches, setTodayPunches] = useState([]);
     const [camActive, setCamActive] = useState(false);
-    const [camError, setCamError] = useState(null);
-    const [demoMode, setDemoMode] = useState(false);
+    const [shot, setShot] = useState("");
+    const [coords, setCoords] = useState(null);
+    const [msg, setMsg] = useState("");
+    const [saving, setSaving] = useState(false);
     const videoRef = useRef(null);
     const streamRef = useRef(null);
+    useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
     useEffect(() => {
-        const t = setInterval(() => setNow(new Date()), 1000);
-        return () => clearInterval(t);
+        (async () => {
+            const b = await sb.from("branches").select("*").eq("company_id", COMPANY_ID);
+            const s = await sb.from("shifts").select("*").eq("company_id", COMPANY_ID);
+            if (b.data) {
+                setBranches(b.data);
+                if (!branchId && b.data[0])
+                    setBranchId(b.data[0].id);
+            }
+            if (s.data) {
+                setShifts(s.data);
+                if (!shiftId && s.data[0])
+                    setShiftId(s.data[0].id);
+            }
+            loadToday();
+        })();
     }, []);
-    useEffect(() => () => stopCamera(), []);
-    // ผูกภาพกล้องเข้าช่องวิดีโอ หลังจาก <video> ถูกสร้างแล้ว (กันจอดำ)
-    useEffect(() => {
-        if (camActive && videoRef.current && streamRef.current) {
-            videoRef.current.srcObject = streamRef.current;
-            videoRef.current.muted = true;
-            videoRef.current.play().catch(() => { });
-        }
-    }, [camActive]);
-    const idx = done.length; // ตอกบัตรครั้งต่อไป (0..3)
-    const current = PUNCHES[idx] || null;
-    const dayComplete = idx >= PUNCHES.length;
-    const distance = useMemo(() => (coords ? distanceMeters(coords, branch) : null), [coords, branch]);
-    const inRange = distance != null && distance <= branch.radius;
-    const ready = photo && inRange && !dayComplete;
-    async function startCamera() {
-        setCamError(null);
+    async function loadToday() {
+        const t = new Date();
+        const ds = t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
+        const { data } = await sb.from("attendance_logs").select("*").eq("employee_id", me.id).eq("work_date", ds).order("punch_at");
+        setTodayPunches(data || []);
+    }
+    const branch = branches.find(b => b.id === branchId);
+    const shift = shifts.find(s => s.id === shiftId);
+    const doneTypes = todayPunches.map(p => p.punch_type);
+    const idx = PUNCHES.findIndex(p => !doneTypes.includes(p.key));
+    const current = idx < 0 ? null : PUNCHES[idx];
+    useEffect(() => { if (camActive && videoRef.current && streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.muted = true;
+        videoRef.current.play().catch(() => { });
+    } }, [camActive]);
+    async function openCam() {
+        setMsg("");
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
             streamRef.current = stream;
-            setCamActive(true); // ให้ <video> ถูกสร้างก่อน แล้วค่อยผูกสตรีมใน useEffect ด้านล่าง
+            setCamActive(true);
         }
-        catch (err) {
-            setCamError("เปิดกล้องไม่ได้ — ลองเปิดใน Chrome เต็มจอ หรือใช้โหมดสาธิต");
-            setDemoMode(true);
+        catch (e) {
+            setMsg("เปิดกล้องไม่ได้ — ลองเปิดใน Chrome เต็มจอ");
         }
     }
-    function stopCamera() {
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
+    function takeShot() {
+        const v = videoRef.current;
+        if (!v)
+            return;
+        const cv = document.createElement("canvas");
+        cv.width = v.videoWidth || 320;
+        cv.height = v.videoHeight || 240;
+        cv.getContext("2d").drawImage(v, 0, 0, cv.width, cv.height);
+        setShot(cv.toDataURL("image/jpeg", 0.6));
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach((t) => t.stop());
+        }
         setCamActive(false);
     }
-    function capturePhoto() {
-        const video = videoRef.current;
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext("2d").drawImage(video, 0, 0);
-        setPhoto(canvas.toDataURL("image/jpeg", 0.8));
-        stopCamera();
-    }
-    function demoPhoto() {
-        const canvas = document.createElement("canvas");
-        canvas.width = 320;
-        canvas.height = 320;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#10b981";
-        ctx.fillRect(0, 0, 320, 320);
-        ctx.fillStyle = "#fff";
-        ctx.font = "20px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText("รูปเซลฟี่ (สาธิต)", 160, 150);
-        ctx.fillText("เห็นหน้า + เห็นร้าน", 160, 180);
-        setPhoto(canvas.toDataURL("image/jpeg", 0.8));
-    }
-    function getLocation() {
-        setGpsError(null);
-        if (demoMode || !navigator.geolocation) {
-            setCoords({ lat: branch.lat + 0.0003, lng: branch.lng + 0.0002 });
+    function checkLoc() {
+        setMsg("");
+        if (!navigator.geolocation) {
+            setMsg("เครื่องนี้ไม่รองรับ GPS");
             return;
         }
-        navigator.geolocation.getCurrentPosition((pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }), () => { setGpsError("อ่านพิกัดไม่ได้ — ใช้โหมดสาธิต"); setDemoMode(true); setCoords({ lat: branch.lat + 0.0003, lng: branch.lng + 0.0002 }); }, { enableHighAccuracy: true, timeout: 8000 });
+        navigator.geolocation.getCurrentPosition((pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }), () => setMsg("ดึงพิกัดไม่ได้ — เปิด GPS แล้วอนุญาตตำแหน่ง"), { enableHighAccuracy: true, timeout: 10000 });
     }
-    function doPunch() {
-        const t = new Date();
-        const rec = {
-            key: current.key,
-            label: current.label,
-            time: t,
-            timeStr: t.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-            photo,
-            coords,
-            distance,
-            status: shiftStatus(t, shift, current.compare),
-        };
-        setDone([...done, rec]);
-        setPhoto(null);
-        setCoords(null);
-        setCamError(null);
-        setGpsError(null);
-        // ระบบจริง: upload รูป + insert attendance_logs (type=current.key, ts, lat, lng, distance)
+    let dist = null, inArea = false;
+    if (coords && branch && branch.lat) {
+        dist = distanceMeters(coords.lat, coords.lng, branch.lat, branch.lng);
+        inArea = dist <= (branch.radius_m || 150);
     }
-    function resetDay() {
-        setDone([]);
-        setPhoto(null);
-        setCoords(null);
-        setCamError(null);
-        setGpsError(null);
+    else if (coords && branch && !branch.lat) {
+        inArea = true;
+        dist = 0;
     }
-    function changeCompany(id) {
-        const c = COMPANIES.find((x) => x.id === id);
-        setCompanyId(c.id);
-        setBranchId(c.branches[0].id);
-        setShiftId(c.shifts[0].id);
-        resetDay();
+    const ready = shot && coords && inArea && current;
+    async function savePunch() {
+        if (!ready || !current)
+            return;
+        setSaving(true);
+        setMsg("");
+        try {
+            let late = 0, ot = 0;
+            const t = new Date();
+            if (current.key === "in" && shift) {
+                const [h, m] = shift.start_time.split(":").map(Number);
+                const st = new Date(t);
+                st.setHours(h, m, 0, 0);
+                late = Math.max(0, Math.round((t.getTime() - st.getTime()) / 60000));
+            }
+            if (current.key === "out" && shift) {
+                const [h, m] = shift.end_time.split(":").map(Number);
+                const en = new Date(t);
+                en.setHours(h, m, 0, 0);
+                ot = Math.max(0, Math.round((t.getTime() - en.getTime()) / 60000));
+            }
+            const { error } = await sb.from("attendance_logs").insert({ employee_id: me.id, branch_id: branchId, shift_id: shiftId, punch_type: current.key, punch_at: t.toISOString(), lat: coords.lat, lng: coords.lng, distance_m: dist, late_minutes: late, ot_minutes: ot });
+            if (error)
+                throw error;
+            setShot("");
+            setCoords(null);
+            setMsg("✅ ตอกบัตร" + current.label + "สำเร็จ");
+            await loadToday();
+        }
+        catch (e) {
+            setMsg("บันทึกไม่สำเร็จ: " + (e.message || e));
+        }
+        setSaving(false);
     }
-    const timeStr = now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const dateStr = now.toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-    const accent = current && current.compare === "out" ? "sky" : "emerald";
-    return (React.createElement("div", { className: "flex min-h-screen items-start justify-center bg-slate-100 p-4", style: TH },
-        React.createElement("div", { className: "w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-xl" },
-            React.createElement("div", { className: `px-5 pb-6 pt-5 text-white bg-gradient-to-br ${accent === "sky" ? "from-sky-600 to-sky-500" : "from-emerald-600 to-emerald-500"}` },
-                React.createElement("div", { className: "flex items-center justify-between" },
-                    React.createElement("div", null,
-                        React.createElement("div", { className: "text-xs opacity-80" }, company.name),
-                        React.createElement("div", { className: "text-lg font-bold leading-tight" }, dayComplete ? "ตอกบัตรครบแล้ววันนี้" : `ตอกบัตร: ${current.label}`)),
-                    React.createElement("div", { className: "text-right text-xs opacity-90" }, employeeName)),
-                React.createElement("div", { className: "mt-4 text-center" },
-                    React.createElement("div", { className: "text-4xl font-bold tabular-nums tracking-wide" }, timeStr),
-                    React.createElement("div", { className: "mt-1 text-xs opacity-90" }, dateStr))),
-            React.createElement("div", { className: "space-y-2 border-b border-slate-100 px-5 py-3" },
-                React.createElement("div", { className: "flex gap-2" },
-                    React.createElement("select", { value: companyId, onChange: (e) => changeCompany(e.target.value), className: "flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm" }, COMPANIES.map((c) => React.createElement("option", { key: c.id, value: c.id }, c.name))),
-                    React.createElement("select", { value: branchId, onChange: (e) => { setBranchId(e.target.value); resetDay(); }, className: "flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm" }, company.branches.map((b) => React.createElement("option", { key: b.id, value: b.id }, b.name)))),
-                React.createElement("select", { value: shiftId, onChange: (e) => { setShiftId(e.target.value); resetDay(); }, className: "w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm" }, company.shifts.map((s) => React.createElement("option", { key: s.id, value: s.id },
-                    s.name,
-                    " (",
-                    s.start,
-                    "\u2013",
-                    s.end,
-                    " \u0E19.)")))),
-            React.createElement("div", { className: "space-y-1.5 border-b border-slate-100 px-5 py-3" }, PUNCHES.map((p, i) => {
-                const rec = done[i];
-                const isCurrent = i === idx && !dayComplete;
-                return (React.createElement("div", { key: p.key, className: `flex items-center gap-3 rounded-lg px-3 py-2 ${isCurrent ? "bg-emerald-50 ring-1 ring-emerald-200" : rec ? "" : "opacity-50"}` },
-                    React.createElement("span", { className: `flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${rec ? "bg-emerald-600 text-white" : isCurrent ? "bg-emerald-200 text-emerald-700" : "bg-slate-200 text-slate-400"}` }, rec ? "✓" : i + 1),
-                    React.createElement("span", { className: "flex-1 text-sm text-slate-700" }, p.label),
-                    rec ? (React.createElement("span", { className: "text-right" },
-                        React.createElement("span", { className: "text-sm font-semibold tabular-nums text-slate-800" }, rec.timeStr),
-                        rec.status && React.createElement(StatusBadge, { status: rec.status }))) : isCurrent ? (React.createElement("span", { className: "text-xs font-medium text-emerald-600" }, "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E15\u0E2D\u0E01")) : null));
-            })),
-            React.createElement("div", { className: "space-y-4 p-5" }, dayComplete ? (React.createElement("div", { className: "text-center" },
-                React.createElement("div", { className: "mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl" }, "\u2713"),
-                React.createElement("div", { className: "text-lg font-bold text-slate-900" }, "\u0E15\u0E2D\u0E01\u0E1A\u0E31\u0E15\u0E23\u0E04\u0E23\u0E1A 4 \u0E04\u0E23\u0E31\u0E49\u0E07\u0E41\u0E25\u0E49\u0E27"),
-                React.createElement("div", { className: "mt-1 text-sm text-slate-500" }, "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E16\u0E39\u0E01\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01 \u0E23\u0E2D\u0E15\u0E23\u0E27\u0E08/\u0E41\u0E01\u0E49\u0E44\u0E02\u0E01\u0E48\u0E2D\u0E19\u0E04\u0E34\u0E14\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19"),
-                React.createElement("button", { onClick: resetDay, className: "mt-4 text-sm text-emerald-600 underline" }, "\u0E17\u0E14\u0E2A\u0E2D\u0E1A\u0E43\u0E2B\u0E21\u0E48"))) : (React.createElement(React.Fragment, null,
-                React.createElement(Step, { n: "\u2460", title: "\u0E16\u0E48\u0E32\u0E22\u0E40\u0E0B\u0E25\u0E1F\u0E35\u0E48 (\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E2B\u0E19\u0E49\u0E32 + \u0E40\u0E2B\u0E47\u0E19\u0E23\u0E49\u0E32\u0E19)", done: !!photo }, photo ? (React.createElement("div", { className: "relative" },
-                    React.createElement("img", { src: photo, alt: "selfie", className: "w-full rounded-xl object-cover" }),
-                    React.createElement("button", { onClick: () => setPhoto(null), className: "absolute right-2 top-2 rounded-full bg-black/60 px-3 py-1 text-xs text-white" }, "\u0E16\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E21\u0E48"))) : camActive ? (React.createElement("div", { className: "space-y-2" },
-                    React.createElement("video", { ref: videoRef, playsInline: true, muted: true, className: "w-full rounded-xl bg-black", style: { transform: "scaleX(-1)" } }),
-                    React.createElement("button", { onClick: capturePhoto, className: "w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white" }, "\uD83D\uDCF8 \u0E01\u0E14\u0E16\u0E48\u0E32\u0E22"))) : (React.createElement("div", { className: "space-y-2" },
-                    React.createElement("button", { onClick: startCamera, className: "w-full rounded-xl bg-emerald-50 py-3 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200" }, "\u0E40\u0E1B\u0E34\u0E14\u0E01\u0E25\u0E49\u0E2D\u0E07\u0E16\u0E48\u0E32\u0E22\u0E40\u0E0B\u0E25\u0E1F\u0E35\u0E48"),
-                    (camError || demoMode) && React.createElement("button", { onClick: demoPhoto, className: "w-full rounded-xl bg-amber-50 py-2.5 text-sm font-medium text-amber-700 ring-1 ring-amber-200" }, "\u0E43\u0E0A\u0E49\u0E23\u0E39\u0E1B\u0E2A\u0E32\u0E18\u0E34\u0E15 (preview)"),
-                    camError && React.createElement("p", { className: "text-xs text-rose-500" }, camError)))),
-                React.createElement(Step, { n: "\u2461", title: "\u0E15\u0E23\u0E27\u0E08\u0E1E\u0E34\u0E01\u0E31\u0E14\u0E23\u0E49\u0E32\u0E19", done: inRange }, coords ? (React.createElement("div", { className: `rounded-xl p-3 text-sm ${inRange ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700"}` },
-                    React.createElement("div", { className: "flex items-center justify-between" },
-                        React.createElement("span", { className: "font-semibold" }, inRange ? "✓ อยู่ในพื้นที่ร้าน" : "✗ อยู่นอกพื้นที่ร้าน"),
-                        React.createElement("span", { className: "tabular-nums" },
-                            "\u0E2B\u0E48\u0E32\u0E07 ",
-                            distance,
-                            " \u0E21.")),
-                    React.createElement("div", { className: "mt-1 text-xs opacity-70" },
-                        "\u0E2D\u0E19\u0E38\u0E0D\u0E32\u0E15\u0E43\u0E19\u0E23\u0E31\u0E28\u0E21\u0E35 ",
-                        branch.radius,
-                        " \u0E21. \u0E08\u0E32\u0E01 ",
-                        branch.name),
-                    !inRange && React.createElement("button", { onClick: getLocation, className: "mt-2 text-xs underline" }, "\u0E40\u0E0A\u0E47\u0E04\u0E1E\u0E34\u0E01\u0E31\u0E14\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07"))) : (React.createElement("div", { className: "space-y-2" },
-                    React.createElement("button", { onClick: getLocation, className: "w-full rounded-xl bg-emerald-50 py-3 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200" }, "\uD83D\uDCCD \u0E15\u0E23\u0E27\u0E08\u0E1E\u0E34\u0E01\u0E31\u0E14\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19"),
-                    gpsError && React.createElement("p", { className: "text-xs text-rose-500" }, gpsError)))),
-                React.createElement("button", { onClick: doPunch, disabled: !ready, className: `w-full rounded-2xl py-4 text-base font-bold transition ${ready ? (accent === "sky" ? "bg-sky-600 text-white shadow-lg shadow-sky-200" : "bg-emerald-600 text-white shadow-lg shadow-emerald-200") : "cursor-not-allowed bg-slate-100 text-slate-400"}` }, ready ? `ตอกบัตร: ${current.label}` : "ถ่ายเซลฟี่ + ตรวจพิกัดให้ครบก่อน")))))));
+    return React.createElement("div", { style: { minHeight: "100vh", background: C.bg, paddingBottom: "24px" } }, React.createElement("div", { style: { background: C.green, color: "#fff", padding: "16px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: "12px", color: C.greenLight } }, "ร้านเบเกอรี่บรรจุภัณฑ์"), React.createElement("div", { style: { fontSize: "18px", fontWeight: 600 } }, "สวัสดี " + me.full_name)), React.createElement("button", { onClick: props.onLogout, style: { background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "ออกจากระบบ")), React.createElement("div", { style: { fontSize: "32px", fontWeight: 700, textAlign: "center", marginTop: "8px" } }, now.toLocaleTimeString("th-TH")), React.createElement("div", { style: { fontSize: "12px", textAlign: "center", color: C.greenLight } }, now.toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))), React.createElement("div", { style: { padding: "14px" } }, React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "12px" } }, React.createElement("select", { value: branchId, onChange: (e) => setBranchId(e.target.value), style: sel }, branches.length === 0 ? React.createElement("option", null, "(ยังไม่มีสาขา)") : branches.map(b => React.createElement("option", { key: b.id, value: b.id }, b.name))), React.createElement("select", { value: shiftId, onChange: (e) => setShiftId(e.target.value), style: sel }, shifts.map(s => React.createElement("option", { key: s.id, value: s.id }, s.name + " (" + s.start_time.slice(0, 5) + "-" + s.end_time.slice(0, 5) + ")")))), React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "12px", marginBottom: "12px" } }, PUNCHES.map((p, i) => {
+        const done = doneTypes.includes(p.key);
+        const isNow = current && current.key === p.key;
+        const pd = todayPunches.find(x => x.punch_type === p.key);
+        return React.createElement("div", { key: p.key, style: { display: "flex", alignItems: "center", gap: "10px", padding: "10px", borderRadius: "10px", background: isNow ? C.greenLight : "transparent" } }, React.createElement("div", { style: { width: "28px", height: "28px", borderRadius: "50%", background: done ? C.green : "#e2e8f0", color: done ? "#fff" : C.sub, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 600 } }, done ? "✓" : (i + 1)), React.createElement("div", { style: { flex: 1, fontSize: "14px", color: done ? C.ink : (isNow ? C.greenInk : C.sub) } }, p.label), done && pd ? React.createElement("div", { style: { fontSize: "13px", color: C.green, fontWeight: 600 } }, hhmm(new Date(pd.punch_at))) : (isNow ? React.createElement("div", { style: { fontSize: "12px", color: C.green } }, "กำลังตอก") : null));
+    })), msg ? React.createElement("div", { style: { padding: "10px", borderRadius: "10px", background: msg[0] === "✅" ? C.greenLight : "#fee2e2", color: msg[0] === "✅" ? C.greenInk : C.red, fontSize: "13px", marginBottom: "12px" } }, msg) : null, current ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px" } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600, marginBottom: "8px" } }, "① ถ่ายเซลฟี่ (ให้เห็นหน้า + เห็นร้าน)"), shot ? React.createElement("img", { src: shot, style: { width: "100%", borderRadius: "12px", transform: "scaleX(-1)" } }) :
+        camActive ? React.createElement("div", null, React.createElement("video", { ref: videoRef, playsInline: true, muted: true, style: { width: "100%", borderRadius: "12px", background: "#000", transform: "scaleX(-1)" } }), React.createElement("button", { onClick: takeShot, style: { ...bigBtn, background: C.ink, color: "#fff", marginTop: "8px" } }, "📸 กดถ่าย")) :
+            React.createElement("button", { onClick: openCam, style: { ...bigBtn, background: C.greenLight, color: C.greenInk } }, "เปิดกล้องถ่ายเซลฟี่"), React.createElement("div", { style: { fontSize: "14px", fontWeight: 600, margin: "14px 0 8px" } }, "② ตรวจพิกัดร้าน"), React.createElement("button", { onClick: checkLoc, style: { ...bigBtn, background: C.greenLight, color: C.greenInk } }, "📍 ตรวจพิกัดปัจจุบัน"), coords ? React.createElement("div", { style: { marginTop: "8px", padding: "10px", borderRadius: "10px", background: inArea ? C.greenLight : "#fee2e2", fontSize: "13px", color: inArea ? C.greenInk : C.red } }, inArea ? ("✓ อยู่ในพื้นที่ร้าน" + (dist != null ? (" (ห่าง " + dist + " ม.)") : "")) : ("✗ อยู่นอกพื้นที่ร้าน" + (dist != null ? (" (ห่าง " + dist + " ม.)") : ""))) : null, React.createElement("button", { onClick: savePunch, disabled: !ready || saving, style: { ...bigBtn, marginTop: "14px", background: (!ready || saving) ? "#cbd5e1" : C.green, color: "#fff", fontWeight: 700 } }, saving ? "กำลังบันทึก..." : (ready ? ("ตอกบัตร " + current.label) : "ถ่ายเซลฟี่ + ตรวจพิกัดให้ครบก่อน"))) :
+        React.createElement("div", { style: { background: C.greenLight, borderRadius: "14px", padding: "20px", textAlign: "center", color: C.greenInk, fontWeight: 600 } }, "✓ วันนี้ตอกบัตรครบทุกช่วงแล้ว")));
 }
-function StatusBadge({ status }) {
-    const c = status.tone === "bad" ? "text-rose-600" : status.tone === "ot" ? "text-amber-600" : "text-emerald-600";
-    return React.createElement("div", { className: `text-xs font-medium ${c}` }, status.label);
+// ---------- OWNER ----------
+function Owner(props) {
+    const [tab, setTab] = useState("emp");
+    return React.createElement("div", { style: { minHeight: "100vh", background: C.bg } }, React.createElement("div", { style: { background: C.blue, color: "#fff", padding: "16px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: "12px", color: C.blueLight } }, "เจ้าของร้าน"), React.createElement("div", { style: { fontSize: "18px", fontWeight: 600 } }, "แดชบอร์ดผู้จัดการ")), React.createElement("button", { onClick: props.onLogout, style: { background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "ออกจากระบบ"))), React.createElement("div", { style: { display: "flex", gap: "6px", padding: "10px 14px", overflowX: "auto" } }, [["emp", "พนักงาน"], ["branch", "สาขา"], ["set", "ตั้งค่า"], ["pay", "เงินเดือน"]].map((kv) => React.createElement("button", { key: kv[0], onClick: () => setTab(kv[0]), style: { padding: "8px 14px", borderRadius: "20px", border: "none", whiteSpace: "nowrap", background: tab === kv[0] ? C.blue : "#fff", color: tab === kv[0] ? "#fff" : C.sub, fontSize: "14px", cursor: "pointer" } }, kv[1]))), React.createElement("div", { style: { padding: "0 14px 24px" } }, tab === "emp" ? React.createElement(Employees, null) :
+        tab === "branch" ? React.createElement(Branches, null) :
+            tab === "set" ? React.createElement(SettingsTab, null) :
+                React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "24px", textAlign: "center", color: C.sub, whiteSpace: "pre-line" } }, "💰 ระบบคิดเงินเดือน + สลิป\nกำลังพัฒนา — ขั้นต่อไป")));
 }
-function Step({ n, title, done, children }) {
-    return (React.createElement("div", null,
-        React.createElement("div", { className: "mb-2 flex items-center gap-2" },
-            React.createElement("span", { className: `flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${done ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"}` }, done ? "✓" : n),
-            React.createElement("span", { className: "text-sm font-semibold text-slate-700" }, title)),
-        children));
+function Employees() {
+    const [list, setList] = useState([]);
+    const [branches, setBranches] = useState([]);
+    const [shifts, setShifts] = useState([]);
+    const [show, setShow] = useState(false);
+    const [msg, setMsg] = useState("");
+    const [f, setF] = useState({ full_name: "", role: "employee", pay_type: "monthly", base_salary: "", daily_wage: "", pin: "", branch_id: "", shift_id: "" });
+    async function load() {
+        const e = await sb.from("employees").select("*").eq("company_id", COMPANY_ID).order("created_at");
+        const b = await sb.from("branches").select("*").eq("company_id", COMPANY_ID);
+        const s = await sb.from("shifts").select("*").eq("company_id", COMPANY_ID);
+        setList(e.data || []);
+        setBranches(b.data || []);
+        setShifts(s.data || []);
+    }
+    useEffect(() => { load(); }, []);
+    async function add() {
+        setMsg("");
+        if (!f.full_name || !f.pin) {
+            setMsg("กรอกชื่อและ PIN ก่อน");
+            return;
+        }
+        try {
+            const ins = await sb.from("employees").insert({ company_id: COMPANY_ID, full_name: f.full_name, role: f.role, pay_type: f.pay_type, base_salary: Number(f.base_salary) || 0, daily_wage: Number(f.daily_wage) || 0, branch_id: f.branch_id || null, shift_id: f.shift_id || null }).select().single();
+            if (ins.error)
+                throw ins.error;
+            const pe = await sb.rpc("set_employee_pin", { emp_id: ins.data.id, new_pin: f.pin });
+            if (pe.error)
+                throw pe.error;
+            setShow(false);
+            setF({ full_name: "", role: "employee", pay_type: "monthly", base_salary: "", daily_wage: "", pin: "", branch_id: "", shift_id: "" });
+            load();
+        }
+        catch (e) {
+            setMsg("เพิ่มไม่สำเร็จ: " + (e.message || e));
+        }
+    }
+    return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "พนักงานทั้งหมด (" + list.length + ")"), React.createElement("button", { onClick: () => setShow(!show), style: { background: C.blue, color: "#fff", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", cursor: "pointer" } }, show ? "ปิด" : "+ เพิ่มพนักงาน")), show ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, fInput("ชื่อ-นามสกุล", f.full_name, (v) => setF({ ...f, full_name: v })), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fSelect("ตำแหน่ง", f.role, (v) => setF({ ...f, role: v }), [["employee", "พนักงาน"], ["owner", "เจ้าของร้าน"]]), fSelect("ประเภทจ่าย", f.pay_type, (v) => setF({ ...f, pay_type: v }), [["monthly", "รายเดือน"], ["daily", "รายวัน"]])), f.pay_type === "monthly" ? fInput("เงินเดือน (บาท)", f.base_salary, (v) => setF({ ...f, base_salary: v }), "number") : fInput("ค่าจ้าง/วัน (บาท)", f.daily_wage, (v) => setF({ ...f, daily_wage: v }), "number"), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fSelect("สาขา", f.branch_id, (v) => setF({ ...f, branch_id: v }), [["", ""]].concat(branches.map(b => [b.id, b.name]))), fSelect("กะ", f.shift_id, (v) => setF({ ...f, shift_id: v }), [["", ""]].concat(shifts.map(s => [s.id, s.name])))), fInput("ตั้ง PIN (4-6 หลัก)", f.pin, (v) => setF({ ...f, pin: v }), "number"), msg ? React.createElement("div", { style: { color: C.red, fontSize: "13px", margin: "4px 0" } }, msg) : null, React.createElement("button", { onClick: add, style: { ...bigBtn, background: C.blue, color: "#fff", marginTop: "6px" } }, "บันทึกพนักงาน")) : null, React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.map(e => React.createElement("div", { key: e.id, style: { background: "#fff", borderRadius: "12px", padding: "12px", display: "flex", alignItems: "center", gap: "10px" } }, React.createElement("div", { style: { width: "36px", height: "36px", borderRadius: "50%", background: e.role === "owner" ? C.blueLight : C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" } }, e.role === "owner" ? "👑" : "👤"), React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, e.full_name), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, (e.role === "owner" ? "เจ้าของร้าน" : "พนักงาน") + " · " + (e.pay_type === "monthly" ? ("เดือนละ " + (e.base_salary || 0)) : ("วันละ " + (e.daily_wage || 0)))))))));
+}
+function Branches() {
+    const [list, setList] = useState([]);
+    const [show, setShow] = useState(false);
+    const [msg, setMsg] = useState("");
+    const [f, setF] = useState({ name: "", lat: "", lng: "", radius_m: "150" });
+    async function load() { const b = await sb.from("branches").select("*").eq("company_id", COMPANY_ID).order("created_at"); setList(b.data || []); }
+    useEffect(() => { load(); }, []);
+    async function add() {
+        setMsg("");
+        if (!f.name) {
+            setMsg("กรอกชื่อสาขาก่อน");
+            return;
+        }
+        try {
+            const ins = await sb.from("branches").insert({ company_id: COMPANY_ID, name: f.name, lat: f.lat ? Number(f.lat) : null, lng: f.lng ? Number(f.lng) : null, radius_m: Number(f.radius_m) || 150 });
+            if (ins.error)
+                throw ins.error;
+            setShow(false);
+            setF({ name: "", lat: "", lng: "", radius_m: "150" });
+            load();
+        }
+        catch (e) {
+            setMsg("เพิ่มไม่สำเร็จ: " + (e.message || e));
+        }
+    }
+    function useHere() { navigator.geolocation.getCurrentPosition((p) => setF({ ...f, lat: String(p.coords.latitude), lng: String(p.coords.longitude) }), () => setMsg("ดึงพิกัดไม่ได้")); }
+    return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "สาขาทั้งหมด (" + list.length + ")"), React.createElement("button", { onClick: () => setShow(!show), style: { background: C.blue, color: "#fff", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", cursor: "pointer" } }, show ? "ปิด" : "+ เพิ่มสาขา")), show ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, fInput("ชื่อสาขา", f.name, (v) => setF({ ...f, name: v })), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fInput("ละติจูด (lat)", f.lat, (v) => setF({ ...f, lat: v })), fInput("ลองจิจูด (lng)", f.lng, (v) => setF({ ...f, lng: v }))), React.createElement("button", { onClick: useHere, style: { ...bigBtn, background: C.greenLight, color: C.greenInk, marginBottom: "8px" } }, "📍 ใช้พิกัดที่ฉันยืนอยู่ตอนนี้"), fInput("รัศมีอนุญาต (เมตร)", f.radius_m, (v) => setF({ ...f, radius_m: v }), "number"), msg ? React.createElement("div", { style: { color: C.red, fontSize: "13px", margin: "4px 0" } }, msg) : null, React.createElement("button", { onClick: add, style: { ...bigBtn, background: C.blue, color: "#fff", marginTop: "6px" } }, "บันทึกสาขา")) : null, React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.map(b => React.createElement("div", { key: b.id, style: { background: "#fff", borderRadius: "12px", padding: "12px" } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, b.name), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, b.lat ? ("พิกัด " + Number(b.lat).toFixed(5) + ", " + Number(b.lng).toFixed(5) + " · รัศมี " + b.radius_m + " ม.") : "⚠️ ยังไม่ตั้งพิกัด")))));
+}
+function SettingsTab() {
+    const [s, setS] = useState(null);
+    const [msg, setMsg] = useState("");
+    useEffect(() => { (async () => { const r = await sb.from("settings").select("*").eq("company_id", COMPANY_ID).single(); setS(r.data); })(); }, []);
+    async function save() {
+        setMsg("");
+        const r = await sb.from("settings").update({ sso_rate: Number(s.sso_rate), sso_cap_salary: Number(s.sso_cap_salary), ot_rate_per_hour: Number(s.ot_rate_per_hour), late_grace_min: Number(s.late_grace_min), late_rate_per_min: Number(s.late_rate_per_min), loan_cap_default: Number(s.loan_cap_default) }).eq("company_id", COMPANY_ID);
+        setMsg(r.error ? ("บันทึกไม่สำเร็จ: " + r.error.message) : "✅ บันทึกแล้ว");
+    }
+    if (!s)
+        return React.createElement("div", { style: { color: C.sub, padding: "20px", textAlign: "center" } }, "กำลังโหลด...");
+    return React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600, marginBottom: "10px" } }, "ตั้งค่าการคิดเงิน (แก้ได้เฉพาะเจ้าของ)"), fInput("ประกันสังคม (0.05 = 5%)", s.sso_rate, (v) => setS({ ...s, sso_rate: v }), "number"), fInput("เพดานฐานประกันสังคม (บาท)", s.sso_cap_salary, (v) => setS({ ...s, sso_cap_salary: v }), "number"), fInput("OT บาท/ชั่วโมง", s.ot_rate_per_hour, (v) => setS({ ...s, ot_rate_per_hour: v }), "number"), fInput("สายสะสมไม่เกินกี่นาที/เดือน (ไม่หัก)", s.late_grace_min, (v) => setS({ ...s, late_grace_min: v }), "number"), fInput("เกินแล้วหักนาทีละ (บาท)", s.late_rate_per_min, (v) => setS({ ...s, late_rate_per_min: v }), "number"), fInput("เพดานหักเงินกู้/เดือน (บาท)", s.loan_cap_default, (v) => setS({ ...s, loan_cap_default: v }), "number"), msg ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "6px 0" } }, msg) : null, React.createElement("button", { onClick: save, style: { ...bigBtn, background: C.blue, color: "#fff", marginTop: "6px" } }, "บันทึกการตั้งค่า"));
+}
+function App() {
+    const [session, setSession] = useState(null);
+    if (!session)
+        return React.createElement(Login, { onLogin: setSession });
+    if (session.role === "owner")
+        return React.createElement(Owner, { session, onLogout: () => setSession(null) });
+    return React.createElement(Employee, { session, onLogout: () => setSession(null) });
 }
 class ErrorBoundary extends React.Component {
     constructor(p) { super(p); this.state = { err: null }; }
     static getDerivedStateFromError(err) { return { err }; }
-    componentDidCatch(err, info) { console.error(err, info); }
+    componentDidCatch(e, i) { console.error(e, i); }
     render() {
         if (this.state.err) {
             const e = this.state.err;
-            return React.createElement('div', { style: { padding: '16px', color: '#b91c1c', whiteSpace: 'pre-wrap', fontFamily: 'Sarabun,sans-serif', fontSize: '13px', lineHeight: 1.6 } }, '⚠️ ' + (e.message || String(e)));
+            return React.createElement("div", { style: { padding: "16px", color: C.red, whiteSpace: "pre-wrap", fontFamily: "Sarabun,sans-serif", fontSize: "13px" } }, "⚠️ " + (e.message || String(e)));
         }
         return this.props.children;
     }
 }
 try {
-    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(ErrorBoundary, null, React.createElement(CheckIn, null)));
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(ErrorBoundary, null, React.createElement(App, null)));
 }
 catch (e) {
     showErr(e && e.message ? e.message : String(e));
