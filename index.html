@@ -219,12 +219,20 @@ function Employee(props) {
                 en.setHours(h, m, 0, 0);
                 ot = Math.max(0, Math.round((t.getTime() - en.getTime()) / 60000));
             }
+            // หลังพักเที่ยง: ต้องกลับภายใน 60 นาทีหลังตอกพักเที่ยงออก เกินนับเป็นสาย
+            if (current.key === "lunch_in") {
+                const lunchOut = todayPunches.find((x) => x.punch_type === "lunch_out");
+                if (lunchOut) {
+                    const back = Math.round((t.getTime() - new Date(lunchOut.punch_at).getTime()) / 60000);
+                    late = Math.max(0, back - 60);
+                }
+            }
             const { error } = await sb.from("attendance_logs").insert({ employee_id: me.id, branch_id: branchId, shift_id: shiftId, punch_type: current.key, punch_at: t.toISOString(), lat: coords.lat, lng: coords.lng, distance_m: dist, late_minutes: late, ot_minutes: ot });
             if (error)
                 throw error;
             setShot("");
             setCoords(null);
-            setMsg("✅ ตอกบัตร" + current.label + "สำเร็จ");
+            setMsg(current.key === "lunch_in" && late > 0 ? ("⚠️ กลับจากพักเที่ยงสาย " + late + " นาที (บันทึกแล้ว)") : ("✅ ตอกบัตร" + current.label + "สำเร็จ"));
             await loadToday();
         }
         catch (e) {
@@ -361,7 +369,7 @@ function Payroll() {
         const att = await sb.from("attendance_logs").select("*").eq("employee_id", emp.id).gte("work_date", start).lte("work_date", end);
         const logs = att.data || [];
         const workDays = new Set(logs.filter((l) => l.punch_type === "in").map((l) => l.work_date)).size;
-        const lateMin = logs.filter((l) => l.punch_type === "in").reduce((a, l) => a + (l.late_minutes || 0), 0);
+        const lateMin = logs.reduce((a, l) => a + (l.late_minutes || 0), 0);
         const otMin = logs.filter((l) => l.punch_type === "out").reduce((a, l) => a + (l.ot_minutes || 0), 0);
         // เงินกู้คงเหลือ
         const ln = await sb.from("loans").select("*").eq("employee_id", emp.id).eq("status", "active");
@@ -484,7 +492,7 @@ function MyData(props) {
         })();
     }, [period]);
     const workDays = new Set(att.filter((l) => l.punch_type === "in").map((l) => l.work_date)).size;
-    const lateMin = att.filter((l) => l.punch_type === "in").reduce((a, l) => a + (l.late_minutes || 0), 0);
+    const lateMin = att.reduce((a, l) => a + (l.late_minutes || 0), 0);
     const otMin = att.filter((l) => l.punch_type === "out").reduce((a, l) => a + (l.ot_minutes || 0), 0);
     const card = { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" };
     const stat = (label, val, color = C.ink) => React.createElement("div", { style: { textAlign: "center", flex: 1 } }, React.createElement("div", { style: { fontSize: "22px", fontWeight: 700, color } }, val), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, label));
