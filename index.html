@@ -271,6 +271,7 @@ function Employees() {
     const [shifts, setShifts] = useState([]);
     const [show, setShow] = useState(false);
     const [msg, setMsg] = useState("");
+    const [editId, setEditId] = useState(null);
     const [f, setF] = useState({ full_name: "", role: "employee", pay_type: "monthly", base_salary: "", daily_wage: "", pin: "", branch_id: "", shift_id: "" });
     async function load() {
         const e = await sb.from("employees").select("*").eq("company_id", COMPANY_ID).order("created_at");
@@ -281,25 +282,60 @@ function Employees() {
         setShifts(s.data || []);
     }
     useEffect(() => { load(); }, []);
-    async function add() {
+    const emptyF = { full_name: "", role: "employee", pay_type: "monthly", base_salary: "", daily_wage: "", pin: "", branch_id: "", shift_id: "" };
+    function startAdd() { setEditId(null); setF(emptyF); setShow(true); setMsg(""); }
+    function startEdit(emp) {
+        setEditId(emp.id);
+        setF({ full_name: emp.full_name || "", role: emp.role || "employee", pay_type: emp.pay_type || "monthly",
+            base_salary: String(emp.base_salary || ""), daily_wage: String(emp.daily_wage || ""), pin: "",
+            branch_id: emp.branch_id || "", shift_id: emp.shift_id || "" });
+        setShow(true);
         setMsg("");
-        if (!f.full_name || !f.pin) {
-            setMsg("กรอกชื่อและ PIN ก่อน");
+        if (typeof window !== "undefined")
+            window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    function cancelForm() { setShow(false); setEditId(null); setF(emptyF); setMsg(""); }
+    async function save() {
+        setMsg("");
+        if (!f.full_name) {
+            setMsg("กรอกชื่อก่อน");
+            return;
+        }
+        if (!editId && !f.pin) {
+            setMsg("กรอก PIN ก่อน");
             return;
         }
         try {
-            const ins = await sb.from("employees").insert({ company_id: COMPANY_ID, full_name: f.full_name, role: f.role, pay_type: f.pay_type, base_salary: Number(f.base_salary) || 0, daily_wage: Number(f.daily_wage) || 0, branch_id: f.branch_id || null, shift_id: f.shift_id || null }).select().single();
-            if (ins.error)
-                throw ins.error;
-            const pe = await sb.rpc("set_employee_pin", { emp_id: ins.data.id, new_pin: f.pin });
-            if (pe.error)
-                throw pe.error;
+            if (editId) {
+                // แก้ไขข้อมูลเดิม
+                const up = await sb.from("employees").update({ full_name: f.full_name, role: f.role, pay_type: f.pay_type,
+                    base_salary: Number(f.base_salary) || 0, daily_wage: Number(f.daily_wage) || 0,
+                    branch_id: f.branch_id || null, shift_id: f.shift_id || null }).eq("id", editId);
+                if (up.error)
+                    throw up.error;
+                if (f.pin) { // ถ้ากรอก PIN ใหม่ด้วย ก็เปลี่ยนให้
+                    const pe = await sb.rpc("set_employee_pin", { emp_id: editId, new_pin: f.pin });
+                    if (pe.error)
+                        throw pe.error;
+                }
+                setMsg("✅ แก้ไขข้อมูลเรียบร้อย");
+            }
+            else {
+                // เพิ่มใหม่
+                const ins = await sb.from("employees").insert({ company_id: COMPANY_ID, full_name: f.full_name, role: f.role, pay_type: f.pay_type, base_salary: Number(f.base_salary) || 0, daily_wage: Number(f.daily_wage) || 0, branch_id: f.branch_id || null, shift_id: f.shift_id || null }).select().single();
+                if (ins.error)
+                    throw ins.error;
+                const pe = await sb.rpc("set_employee_pin", { emp_id: ins.data.id, new_pin: f.pin });
+                if (pe.error)
+                    throw pe.error;
+            }
             setShow(false);
-            setF({ full_name: "", role: "employee", pay_type: "monthly", base_salary: "", daily_wage: "", pin: "", branch_id: "", shift_id: "" });
+            setEditId(null);
+            setF(emptyF);
             load();
         }
         catch (e) {
-            setMsg("เพิ่มไม่สำเร็จ: " + (e.message || e));
+            setMsg((editId ? "แก้ไข" : "เพิ่ม") + "ไม่สำเร็จ: " + (e.message || e));
         }
     }
     async function deactivate(emp) {
@@ -348,9 +384,9 @@ function Employees() {
         }
         setMsg("✅ เปลี่ยน PIN ของ " + emp.full_name + " เรียบร้อย");
     }
-    return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "พนักงานทั้งหมด (" + list.length + ")"), React.createElement("button", { onClick: () => setShow(!show), style: { background: C.blue, color: "#fff", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", cursor: "pointer" } }, show ? "ปิด" : "+ เพิ่มพนักงาน")), show ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, fInput("ชื่อ-นามสกุล", f.full_name, (v) => setF({ ...f, full_name: v })), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fSelect("ตำแหน่ง", f.role, (v) => setF({ ...f, role: v }), [["employee", "พนักงาน"], ["manager", "หัวหน้าร้าน"], ["owner", "เจ้าของร้าน"]]), fSelect("ประเภทจ่าย", f.pay_type, (v) => setF({ ...f, pay_type: v }), [["monthly", "รายเดือน"], ["daily", "รายวัน"]])), f.pay_type === "monthly" ? fInput("เงินเดือน (บาท)", f.base_salary, (v) => setF({ ...f, base_salary: v }), "number") : fInput("ค่าจ้าง/วัน (บาท)", f.daily_wage, (v) => setF({ ...f, daily_wage: v }), "number"), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fSelect("สาขา", f.branch_id, (v) => setF({ ...f, branch_id: v }), [["", ""]].concat(branches.map(b => [b.id, b.name]))), fSelect("กะ", f.shift_id, (v) => setF({ ...f, shift_id: v }), [["", ""]].concat(shifts.map(s => [s.id, s.name])))), fInput("ตั้ง PIN (4-6 หลัก)", f.pin, (v) => setF({ ...f, pin: v }), "number"), msg ? React.createElement("div", { style: { color: C.red, fontSize: "13px", margin: "4px 0" } }, msg) : null, React.createElement("button", { onClick: add, style: { ...bigBtn, background: C.blue, color: "#fff", marginTop: "6px" } }, "บันทึกพนักงาน")) : null, React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.map(e => React.createElement("div", { key: e.id, style: { background: "#fff", borderRadius: "12px", padding: "12px", opacity: e.active === false ? 0.55 : 1 } }, React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, React.createElement("div", { style: { width: "36px", height: "36px", borderRadius: "50%", background: e.role === "owner" ? C.blueLight : C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" } }, e.role === "owner" ? "👑" : (e.role === "manager" ? "🧑‍💼" : "👤")), React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, e.full_name, e.active === false ? React.createElement("span", { style: { fontSize: "11px", color: C.red, marginLeft: "6px", fontWeight: 400 } }, "(พักงาน)") : null), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, (e.role === "owner" ? "เจ้าของร้าน" : (e.role === "manager" ? "หัวหน้าร้าน" : "พนักงาน")) + " · " + (e.pay_type === "monthly" ? ("เดือนละ " + (e.base_salary || 0)) : ("วันละ " + (e.daily_wage || 0)))))), React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "10px" } }, React.createElement("button", { onClick: () => changePin(e), style: { flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid " + C.blue, background: "#fff", color: C.blue, fontSize: "13px", fontWeight: 600, cursor: "pointer" } }, "🔑 เปลี่ยน PIN"), e.role !== "owner" ? (e.active === false ?
-        React.createElement("button", { onClick: () => reactivate(e), style: { flex: 1, padding: "8px", borderRadius: "8px", border: "none", background: C.green, color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer" } }, "เปิดใช้งาน") :
-        React.createElement("button", { onClick: () => deactivate(e), style: { flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid " + C.sub, background: "#fff", color: C.sub, fontSize: "13px", cursor: "pointer" } }, "พักงาน/ลาออก")) : null, e.role !== "owner" ? React.createElement("button", { onClick: () => del(e), style: { padding: "8px 14px", borderRadius: "8px", border: "1px solid " + C.red, background: "#fff", color: C.red, fontSize: "13px", cursor: "pointer" } }, "ลบ") : null)))));
+    return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "พนักงานทั้งหมด (" + list.length + ")"), React.createElement("button", { onClick: () => show ? cancelForm() : startAdd(), style: { background: C.blue, color: "#fff", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", cursor: "pointer" } }, show ? "ปิด" : "+ เพิ่มพนักงาน")), (!show && msg) ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "0 0 10px" } }, msg) : null, show ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 700, marginBottom: "10px", color: editId ? C.green : C.blue } }, editId ? ("✏️ แก้ไขข้อมูล: " + f.full_name) : "+ เพิ่มพนักงานใหม่"), fInput("ชื่อ-นามสกุล", f.full_name, (v) => setF({ ...f, full_name: v })), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fSelect("ตำแหน่ง", f.role, (v) => setF({ ...f, role: v }), [["employee", "พนักงาน"], ["manager", "หัวหน้าร้าน"], ["owner", "เจ้าของร้าน"]]), fSelect("ประเภทจ่าย", f.pay_type, (v) => setF({ ...f, pay_type: v }), [["monthly", "รายเดือน"], ["daily", "รายวัน"]])), f.pay_type === "monthly" ? fInput("เงินเดือน (บาท)", f.base_salary, (v) => setF({ ...f, base_salary: v }), "number") : fInput("ค่าจ้าง/วัน (บาท)", f.daily_wage, (v) => setF({ ...f, daily_wage: v }), "number"), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fSelect("สาขา", f.branch_id, (v) => setF({ ...f, branch_id: v }), [["", ""]].concat(branches.map(b => [b.id, b.name]))), fSelect("กะ", f.shift_id, (v) => setF({ ...f, shift_id: v }), [["", ""]].concat(shifts.map(s => [s.id, s.name])))), fInput(editId ? "ตั้ง PIN ใหม่ (เว้นว่างถ้าไม่เปลี่ยน)" : "ตั้ง PIN (4-6 หลัก)", f.pin, (v) => setF({ ...f, pin: v }), "number"), msg ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "4px 0" } }, msg) : null, React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "6px" } }, React.createElement("button", { onClick: save, style: { ...bigBtn, flex: 1, background: C.blue, color: "#fff" } }, editId ? "บันทึกการแก้ไข" : "บันทึกพนักงาน"), React.createElement("button", { onClick: cancelForm, style: { ...bigBtn, flex: 0, padding: "14px 18px", background: "#eee", color: C.sub } }, "ยกเลิก"))) : null, React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.map(e => React.createElement("div", { key: e.id, style: { background: "#fff", borderRadius: "12px", padding: "12px", opacity: e.active === false ? 0.55 : 1 } }, React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, React.createElement("div", { style: { width: "36px", height: "36px", borderRadius: "50%", background: e.role === "owner" ? C.blueLight : C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" } }, e.role === "owner" ? "👑" : (e.role === "manager" ? "🧑‍💼" : "👤")), React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, e.full_name, e.active === false ? React.createElement("span", { style: { fontSize: "11px", color: C.red, marginLeft: "6px", fontWeight: 400 } }, "(พักงาน)") : null), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, (e.role === "owner" ? "เจ้าของร้าน" : (e.role === "manager" ? "หัวหน้าร้าน" : "พนักงาน")) + " · " + (e.pay_type === "monthly" ? ("เดือนละ " + (e.base_salary || 0)) : ("วันละ " + (e.daily_wage || 0)))))), React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" } }, React.createElement("button", { onClick: () => startEdit(e), style: { flex: 1, minWidth: "80px", padding: "8px", borderRadius: "8px", border: "none", background: C.green, color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer" } }, "✏️ แก้ไข"), React.createElement("button", { onClick: () => changePin(e), style: { flex: 1, minWidth: "80px", padding: "8px", borderRadius: "8px", border: "1px solid " + C.blue, background: "#fff", color: C.blue, fontSize: "13px", fontWeight: 600, cursor: "pointer" } }, "🔑 PIN"), e.role !== "owner" ? (e.active === false ?
+        React.createElement("button", { onClick: () => reactivate(e), style: { flex: 1, minWidth: "80px", padding: "8px", borderRadius: "8px", border: "none", background: C.green, color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer" } }, "เปิดใช้งาน") :
+        React.createElement("button", { onClick: () => deactivate(e), style: { flex: 1, minWidth: "80px", padding: "8px", borderRadius: "8px", border: "1px solid " + C.sub, background: "#fff", color: C.sub, fontSize: "13px", cursor: "pointer" } }, "พักงาน")) : null, e.role !== "owner" ? React.createElement("button", { onClick: () => del(e), style: { padding: "8px 14px", borderRadius: "8px", border: "1px solid " + C.red, background: "#fff", color: C.red, fontSize: "13px", cursor: "pointer" } }, "ลบ") : null)))));
 }
 function Branches() {
     const [list, setList] = useState([]);
