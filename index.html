@@ -258,13 +258,14 @@ function Employee(props) {
 // ---------- OWNER ----------
 function Owner(props) {
     const [tab, setTab] = useState("emp");
-    return React.createElement("div", { style: { minHeight: "100vh", background: C.bg } }, React.createElement("div", { style: { background: "linear-gradient(135deg,#6E4423,#523218)", color: "#fff", padding: "16px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, React.createElement("img", { src: LOGO, alt: "", style: { width: "40px", height: "40px", borderRadius: "10px", objectFit: "cover" } }), React.createElement("div", null, React.createElement("div", { style: { fontSize: "12px", color: C.blueLight } }, "เจ้าของร้าน"), React.createElement("div", { style: { fontSize: "18px", fontWeight: 600 } }, "แดชบอร์ดผู้จัดการ"))), React.createElement("button", { onClick: props.onLogout, style: { background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "ออกจากระบบ"))), React.createElement("div", { style: { display: "flex", gap: "6px", padding: "10px 14px", overflowX: "auto" } }, [["status", "สถานะวันนี้"], ["emp", "พนักงาน"], ["ot", "คำขอ OT"], ["off", "วันหยุด"], ["branch", "สาขา"], ["set", "ตั้งค่า"], ["pay", "เงินเดือน"]].map((kv) => React.createElement("button", { key: kv[0], onClick: () => setTab(kv[0]), style: { padding: "8px 14px", borderRadius: "20px", border: "none", whiteSpace: "nowrap", background: tab === kv[0] ? C.blue : "#fff", color: tab === kv[0] ? "#fff" : C.sub, fontSize: "14px", cursor: "pointer" } }, kv[1]))), React.createElement("div", { style: { padding: "0 14px 24px" } }, tab === "status" ? React.createElement(StatusToday, null) :
+    return React.createElement("div", { style: { minHeight: "100vh", background: C.bg } }, React.createElement("div", { style: { background: "linear-gradient(135deg,#6E4423,#523218)", color: "#fff", padding: "16px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, React.createElement("img", { src: LOGO, alt: "", style: { width: "40px", height: "40px", borderRadius: "10px", objectFit: "cover" } }), React.createElement("div", null, React.createElement("div", { style: { fontSize: "12px", color: C.blueLight } }, "เจ้าของร้าน"), React.createElement("div", { style: { fontSize: "18px", fontWeight: 600 } }, "แดชบอร์ดผู้จัดการ"))), React.createElement("button", { onClick: props.onLogout, style: { background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "ออกจากระบบ"))), React.createElement("div", { style: { display: "flex", gap: "6px", padding: "10px 14px", overflowX: "auto" } }, [["status", "สถานะวันนี้"], ["emp", "พนักงาน"], ["shift", "กะ"], ["ot", "คำขอ OT"], ["off", "วันหยุด"], ["branch", "สาขา"], ["set", "ตั้งค่า"], ["pay", "เงินเดือน"]].map((kv) => React.createElement("button", { key: kv[0], onClick: () => setTab(kv[0]), style: { padding: "8px 14px", borderRadius: "20px", border: "none", whiteSpace: "nowrap", background: tab === kv[0] ? C.blue : "#fff", color: tab === kv[0] ? "#fff" : C.sub, fontSize: "14px", cursor: "pointer" } }, kv[1]))), React.createElement("div", { style: { padding: "0 14px 24px" } }, tab === "status" ? React.createElement(StatusToday, null) :
         tab === "emp" ? React.createElement(Employees, null) :
-            tab === "ot" ? React.createElement(OtApprove, null) :
-                tab === "off" ? React.createElement(DayOffs, null) :
-                    tab === "branch" ? React.createElement(Branches, null) :
-                        tab === "set" ? React.createElement(SettingsTab, null) :
-                            React.createElement(Payroll, null)));
+            tab === "shift" ? React.createElement(Shifts, null) :
+                tab === "ot" ? React.createElement(OtApprove, null) :
+                    tab === "off" ? React.createElement(DayOffs, null) :
+                        tab === "branch" ? React.createElement(Branches, null) :
+                            tab === "set" ? React.createElement(SettingsTab, null) :
+                                React.createElement(Payroll, null)));
 }
 function Employees() {
     const [list, setList] = useState([]);
@@ -830,6 +831,59 @@ function StatusToday() {
             const lin = empLog(e.id, "lunch_in");
             return React.createElement("div", { key: e.id, style: { background: "#fff", borderRadius: "12px", padding: "12px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: tin ? "8px" : "0" } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, (e.role === "manager" ? "🧑‍💼 " : "👤 ") + e.full_name), React.createElement("div", { style: { fontSize: "12px", fontWeight: 600, color: st.color, background: st.bg, padding: "3px 10px", borderRadius: "12px" } }, st.txt)), tin ? React.createElement("div", { style: { display: "flex", gap: "12px", flexWrap: "wrap", fontSize: "12px", color: C.sub } }, React.createElement("span", null, "เข้า: ", React.createElement("b", { style: { color: C.ink } }, tin)), lout ? React.createElement("span", null, "พักเที่ยง: ", React.createElement("b", { style: { color: C.ink } }, lout)) : null, lin ? React.createElement("span", null, "กลับ: ", React.createElement("b", { style: { color: C.ink } }, lin)) : null, tout ? React.createElement("span", null, "ออก: ", React.createElement("b", { style: { color: C.ink } }, tout)) : null) : null);
         }))))));
+}
+// ---------- จัดการกะ (เจ้าของเพิ่ม/แก้/ลบ เวลาเข้า-ออก) ----------
+function Shifts() {
+    const [list, setList] = useState([]);
+    const [show, setShow] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const [f, setF] = useState({ name: "", start_time: "08:00", end_time: "17:00" });
+    const [msg, setMsg] = useState("");
+    async function load() { const s = await sb.from("shifts").select("*").eq("company_id", COMPANY_ID).order("start_time"); setList(s.data || []); }
+    useEffect(() => { load(); }, []);
+    const empty = { name: "", start_time: "08:00", end_time: "17:00" };
+    function startAdd() { setEditId(null); setF(empty); setShow(true); setMsg(""); }
+    function startEdit(s) { setEditId(s.id); setF({ name: s.name || "", start_time: (s.start_time || "08:00").slice(0, 5), end_time: (s.end_time || "17:00").slice(0, 5) }); setShow(true); setMsg(""); }
+    function cancel() { setShow(false); setEditId(null); setF(empty); setMsg(""); }
+    async function save() {
+        setMsg("");
+        if (!f.name) {
+            setMsg("ใส่ชื่อกะก่อน");
+            return;
+        }
+        try {
+            if (editId) {
+                const r = await sb.from("shifts").update({ name: f.name, start_time: f.start_time, end_time: f.end_time }).eq("id", editId);
+                if (r.error)
+                    throw r.error;
+                setMsg("✅ แก้ไขกะเรียบร้อย");
+            }
+            else {
+                const r = await sb.from("shifts").insert({ company_id: COMPANY_ID, name: f.name, start_time: f.start_time, end_time: f.end_time });
+                if (r.error)
+                    throw r.error;
+            }
+            setShow(false);
+            setEditId(null);
+            setF(empty);
+            load();
+        }
+        catch (e) {
+            setMsg("บันทึกไม่สำเร็จ: " + (e.message || e));
+        }
+    }
+    async function del(s) {
+        if (!window.confirm("ลบกะ \"" + s.name + "\"?\n(พนักงานที่อยู่กะนี้จะไม่มีกะ ต้องไปตั้งใหม่)"))
+            return;
+        const r = await sb.from("shifts").delete().eq("id", s.id);
+        if (r.error) {
+            setMsg("ลบไม่สำเร็จ: " + r.error.message);
+            return;
+        }
+        load();
+    }
+    return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "กะการทำงาน (" + list.length + ")"), React.createElement("button", { onClick: () => show ? cancel() : startAdd(), style: { background: C.blue, color: "#fff", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", cursor: "pointer" } }, show ? "ปิด" : "+ เพิ่มกะ")), (!show && msg) ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "0 0 10px" } }, msg) : null, show ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 700, marginBottom: "10px", color: editId ? C.green : C.blue } }, editId ? ("✏️ แก้ไขกะ: " + f.name) : "+ เพิ่มกะใหม่"), fInput("ชื่อกะ (เช่น ร้านใหญ่ - กะเช้า)", f.name, (v) => setF({ ...f, name: v })), React.createElement("div", { style: { display: "flex", gap: "8px" } }, React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "4px" } }, "เวลาเข้างาน"), React.createElement("input", { type: "time", value: f.start_time, onChange: (e) => setF({ ...f, start_time: e.target.value }), style: { width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid " + C.line, fontSize: "14px", boxSizing: "border-box" } })), React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "4px" } }, "เวลาเลิกงาน"), React.createElement("input", { type: "time", value: f.end_time, onChange: (e) => setF({ ...f, end_time: e.target.value }), style: { width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid " + C.line, fontSize: "14px", boxSizing: "border-box" } }))), msg ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "6px 0" } }, msg) : null, React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "8px" } }, React.createElement("button", { onClick: save, style: { ...bigBtn, flex: 1, background: C.blue, color: "#fff" } }, editId ? "บันทึกการแก้ไข" : "บันทึกกะ"), React.createElement("button", { onClick: cancel, style: { ...bigBtn, flex: 0, padding: "14px 18px", background: "#eee", color: C.sub } }, "ยกเลิก"))) : null, React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.length === 0 ? React.createElement("div", { style: { color: C.sub, fontSize: "13px" } }, "ยังไม่มีกะ") :
+        list.map((s) => React.createElement("div", { key: s.id, style: { background: "#fff", borderRadius: "12px", padding: "12px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, s.name), React.createElement("div", { style: { fontSize: "13px", color: C.blue, fontWeight: 600 } }, "⏰ " + s.start_time.slice(0, 5) + " - " + s.end_time.slice(0, 5) + " น.")), React.createElement("div", { style: { display: "flex", gap: "8px" } }, React.createElement("button", { onClick: () => startEdit(s), style: { padding: "7px 12px", borderRadius: "8px", border: "none", background: C.green, color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer" } }, "✏️ แก้"), React.createElement("button", { onClick: () => del(s), style: { padding: "7px 12px", borderRadius: "8px", border: "1px solid " + C.red, background: "#fff", color: C.red, fontSize: "13px", cursor: "pointer" } }, "ลบ")))))));
 }
 function App() {
     const [session, setSession] = useState(null);
