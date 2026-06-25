@@ -264,15 +264,16 @@ function Employee(props) {
 // ---------- OWNER ----------
 function Owner(props) {
     const [tab, setTab] = useState("emp");
-    return React.createElement("div", { style: { minHeight: "100vh", background: C.bg } }, React.createElement("div", { style: { background: "linear-gradient(135deg,#6E4423,#523218)", color: "#fff", padding: "16px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, React.createElement("img", { src: LOGO, alt: "", style: { width: "40px", height: "40px", borderRadius: "10px", objectFit: "cover" } }), React.createElement("div", null, React.createElement("div", { style: { fontSize: "12px", color: C.blueLight } }, "ผู้บริหาร"), React.createElement("div", { style: { fontSize: "18px", fontWeight: 600 } }, "ร้านเบเกอรี่บรรจุภัณฑ์ กาฬสินธุ์"))), React.createElement("button", { onClick: props.onLogout, style: { background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "ออกจากระบบ"))), React.createElement("div", { style: { display: "flex", gap: "6px", padding: "10px 14px", overflowX: "auto" } }, [["status", "สถานะวันนี้"], ["emp", "พนักงาน"], ["shift", "กะ"], ["ot", "คำขอ OT"], ["off", "วันหยุด"], ["deduct", "บันทึกหักเงิน"], ["branch", "สาขา"], ["set", "ตั้งค่า"], ["pay", "เงินเดือน"]].map((kv) => React.createElement("button", { key: kv[0], onClick: () => setTab(kv[0]), style: { padding: "8px 14px", borderRadius: "20px", border: "none", whiteSpace: "nowrap", background: tab === kv[0] ? C.blue : "#fff", color: tab === kv[0] ? "#fff" : C.sub, fontSize: "14px", cursor: "pointer" } }, kv[1]))), React.createElement("div", { style: { padding: "0 14px 24px" } }, tab === "status" ? React.createElement(StatusToday, null) :
-        tab === "emp" ? React.createElement(Employees, null) :
-            tab === "shift" ? React.createElement(Shifts, null) :
-                tab === "ot" ? React.createElement(OtApprove, null) :
-                    tab === "off" ? React.createElement(OffManage, null) :
-                        tab === "deduct" ? React.createElement(DeductLog, null) :
-                            tab === "branch" ? React.createElement(Branches, null) :
-                                tab === "set" ? React.createElement(SettingsTab, null) :
-                                    React.createElement(Payroll, null)));
+    return React.createElement("div", { style: { minHeight: "100vh", background: C.bg } }, React.createElement("div", { style: { background: "linear-gradient(135deg,#6E4423,#523218)", color: "#fff", padding: "16px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, React.createElement("img", { src: LOGO, alt: "", style: { width: "40px", height: "40px", borderRadius: "10px", objectFit: "cover" } }), React.createElement("div", null, React.createElement("div", { style: { fontSize: "12px", color: C.blueLight } }, "ผู้บริหาร"), React.createElement("div", { style: { fontSize: "18px", fontWeight: 600 } }, "ร้านเบเกอรี่บรรจุภัณฑ์ กาฬสินธุ์"))), React.createElement("button", { onClick: props.onLogout, style: { background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" } }, "ออกจากระบบ"))), React.createElement("div", { style: { display: "flex", gap: "6px", padding: "10px 14px", overflowX: "auto" } }, [["status", "สถานะวันนี้"], ["summary", "ประวัติพนักงาน"], ["emp", "พนักงาน"], ["shift", "กะ"], ["ot", "คำขอ OT"], ["off", "วันหยุด"], ["deduct", "บันทึกหักเงิน"], ["branch", "สาขา"], ["set", "ตั้งค่า"], ["pay", "เงินเดือน"]].map((kv) => React.createElement("button", { key: kv[0], onClick: () => setTab(kv[0]), style: { padding: "8px 14px", borderRadius: "20px", border: "none", whiteSpace: "nowrap", background: tab === kv[0] ? C.blue : "#fff", color: tab === kv[0] ? "#fff" : C.sub, fontSize: "14px", cursor: "pointer" } }, kv[1]))), React.createElement("div", { style: { padding: "0 14px 24px" } }, tab === "status" ? React.createElement(StatusToday, null) :
+        tab === "summary" ? React.createElement(MonthSummary, null) :
+            tab === "emp" ? React.createElement(Employees, null) :
+                tab === "shift" ? React.createElement(Shifts, null) :
+                    tab === "ot" ? React.createElement(OtApprove, null) :
+                        tab === "off" ? React.createElement(OffManage, null) :
+                            tab === "deduct" ? React.createElement(DeductLog, null) :
+                                tab === "branch" ? React.createElement(Branches, null) :
+                                    tab === "set" ? React.createElement(SettingsTab, null) :
+                                        React.createElement(Payroll, null)));
 }
 function Employees() {
     const [list, setList] = useState([]);
@@ -1106,6 +1107,65 @@ function DeductLog() {
     const total = list.reduce((a, x) => a + Number(x.amount || 0), 0);
     return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "บันทึกหักเงิน"), React.createElement("input", { type: "month", value: period, onChange: (e) => setPeriod(e.target.value), style: { padding: "8px", borderRadius: "8px", border: "1px solid " + C.line, fontSize: "13px" } })), React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "10px" } }, "จดระหว่างเดือนว่าใครโดนหักอะไร พอคิดเงินเดือนงวดนี้ ระบบจะรวมยอดมาหักให้อัตโนมัติ"), React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, fSelect("เลือกพนักงาน", empId, (v) => setEmpId(v), [["", ""]].concat(emps.map((e) => [e.id, e.full_name]))), React.createElement("div", { style: { fontSize: "12px", color: C.sub, margin: "6px 0 4px" } }, "ประเภทการหัก"), React.createElement("select", { value: dtype, onChange: (e) => setDtype(e.target.value), style: { width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid " + C.line, fontSize: "14px", marginBottom: "10px", background: "#fff" } }, TYPES.map((t) => React.createElement("option", { key: t[0], value: t[0] }, t[1]))), fInput("จำนวนเงิน (บาท)", amount, (v) => setAmount(v), "number"), React.createElement("textarea", { value: note, onChange: (e) => setNote(e.target.value), placeholder: "หมายเหตุ เช่น ทำจานแตก 2 ใบ (ถ้ามี)", rows: 2, style: { width: "100%", padding: "10px", borderRadius: "10px", border: "1px solid " + C.line, fontSize: "14px", fontFamily: "inherit", marginBottom: "10px", boxSizing: "border-box", resize: "vertical" } }), msg ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", marginBottom: "8px" } }, msg) : null, React.createElement("button", { onClick: add, style: { ...bigBtn, background: C.blue, color: "#fff" } }, "บันทึกรายการหัก")), React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 8px" } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, "รายการเดือนนี้ (" + list.length + ")"), React.createElement("div", { style: { fontSize: "14px", fontWeight: 700, color: C.red } }, "รวม -" + total.toLocaleString() + " ฿")), React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.length === 0 ? React.createElement("div", { style: { color: C.sub, fontSize: "13px" } }, "ยังไม่มีรายการเดือนนี้") :
         list.map((r) => React.createElement("div", { key: r.id, style: { background: "#fff", borderRadius: "12px", padding: "12px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, empName(r.employee_id)), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, dt(r.ded_date) + " · " + typeName(r.ded_type) + (r.note ? (" · " + r.note) : ""))), React.createElement("div", { style: { textAlign: "right" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 700, color: C.red } }, "-" + Number(r.amount).toLocaleString()), React.createElement("button", { onClick: () => del(r.id), style: { marginTop: "4px", padding: "3px 10px", borderRadius: "6px", border: "1px solid " + C.red, background: "#fff", color: C.red, fontSize: "12px", cursor: "pointer" } }, "ลบ")))))));
+}
+// ---------- ผู้บริหาร: สรุปรายคนต่อเดือน (OT/สาย/ขาด/ลา/วันทำงาน) ----------
+function MonthSummary() {
+    const now = new Date();
+    const monthStr = () => now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+    const [sel, setSel] = useState(null); // พนักงานที่เลือก (null = แสดงรายชื่อ)
+    const [mode, setMode] = useState("month");
+    const [period, setPeriod] = useState(monthStr());
+    const [year, setYear] = useState(String(now.getFullYear()));
+    const [emps, setEmps] = useState([]);
+    const [logs, setLogs] = useState([]);
+    const [leaves, setLeaves] = useState([]);
+    const [loading, setLoading] = useState(false);
+    // โหลดรายชื่อพนักงานครั้งแรก
+    useEffect(() => { (async () => { const e = await sb.from("employees").select("*").eq("company_id", COMPANY_ID).eq("active", true).order("created_at"); setEmps(e.data || []); })(); }, []);
+    // โหลดประวัติของคนที่เลือก
+    async function loadHistory() {
+        if (!sel)
+            return;
+        setLoading(true);
+        let start = "", end = "";
+        if (mode === "year") {
+            start = year + "-01-01";
+            end = year + "-12-31";
+        }
+        else {
+            start = period + "-01";
+            const [y, m] = period.split("-").map(Number);
+            const ed = new Date(y, m, 0);
+            end = period + "-" + String(ed.getDate()).padStart(2, "0");
+        }
+        const a = await sb.from("attendance_logs").select("*").eq("employee_id", sel.id).gte("work_date", start).lte("work_date", end);
+        const lv = await sb.from("leaves").select("*").eq("employee_id", sel.id).gte("leave_date", start).lte("leave_date", end);
+        setLogs(a.data || []);
+        setLeaves(lv.data || []);
+        setLoading(false);
+    }
+    useEffect(() => { loadHistory(); }, [sel, period, year, mode]);
+    const workDays = new Set(logs.filter((x) => x.punch_type === "in").map((x) => x.work_date)).size;
+    const lateMin = logs.reduce((a, x) => a + (x.late_minutes || 0), 0);
+    const otMin = logs.filter((x) => x.punch_type === "out").reduce((a, x) => a + (x.ot_minutes || 0), 0);
+    const absent = leaves.filter((x) => x.leave_type === "ขาดงาน").length;
+    const leaveCnt = leaves.filter((x) => x.leave_type !== "ขาดงาน").length;
+    const years = [];
+    for (let yy = now.getFullYear(); yy >= now.getFullYear() - 4; yy--)
+        years.push(String(yy));
+    // ----- หน้ารายชื่อ (ยังไม่เลือกใคร) -----
+    if (!sel) {
+        return React.createElement("div", null, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600, margin: "4px 0 4px" } }, "ประวัติพนักงาน"), React.createElement("div", { style: { fontSize: "13px", color: C.sub, marginBottom: "12px" } }, "แตะที่ชื่อพนักงาน เพื่อดูประวัติการทำงาน"), React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, emps.length === 0 ? React.createElement("div", { style: { color: C.sub, fontSize: "13px" } }, "ไม่มีพนักงาน") :
+            emps.map((e) => React.createElement("button", { key: e.id, onClick: () => { setSel(e); setMode("month"); setPeriod(monthStr()); },
+                style: { display: "flex", alignItems: "center", gap: "12px", background: "#fff", border: "none", borderRadius: "12px", padding: "14px", cursor: "pointer", textAlign: "left", width: "100%" } }, React.createElement("div", { style: { width: "42px", height: "42px", borderRadius: "50%", background: e.role === "owner" ? C.blueLight : C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" } }, e.role === "owner" ? "👑" : (e.role === "manager" ? "🧑‍💼" : "👤")), React.createElement("div", { style: { flex: 1 } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600, color: C.ink } }, e.full_name), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, e.role === "owner" ? "ผู้บริหาร" : (e.role === "manager" ? "หัวหน้าร้าน" : "พนักงาน"))), React.createElement("div", { style: { fontSize: "20px", color: C.sub } }, "›")))));
+    }
+    // ----- หน้าประวัติของคนที่เลือก -----
+    const bigStat = (label, val, color) => React.createElement("div", { style: { flex: 1, background: "#fff", borderRadius: "12px", padding: "14px 8px", textAlign: "center" } }, React.createElement("div", { style: { fontSize: "18px", fontWeight: 700, color } }, val), React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginTop: "2px" } }, label));
+    const tabBtn = (k, label) => React.createElement("button", { onClick: () => setMode(k), style: { flex: 1, padding: "9px", borderRadius: "8px", border: "none", background: mode === k ? C.blue : "#fff", color: mode === k ? "#fff" : C.sub, fontSize: "14px", fontWeight: 600, cursor: "pointer" } }, label);
+    return React.createElement("div", null, React.createElement("button", { onClick: () => setSel(null), style: { background: "none", border: "none", color: C.blue, fontSize: "14px", fontWeight: 600, cursor: "pointer", padding: "4px 0", marginBottom: "6px" } }, "‹ กลับไปรายชื่อ"), React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "12px", background: "#fff", borderRadius: "12px", padding: "14px", marginBottom: "12px" } }, React.createElement("div", { style: { width: "48px", height: "48px", borderRadius: "50%", background: sel.role === "owner" ? C.blueLight : C.greenLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px" } }, sel.role === "owner" ? "👑" : (sel.role === "manager" ? "🧑‍💼" : "👤")), React.createElement("div", null, React.createElement("div", { style: { fontSize: "17px", fontWeight: 700 } }, sel.full_name), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, sel.role === "owner" ? "ผู้บริหาร" : (sel.role === "manager" ? "หัวหน้าร้าน" : "พนักงาน")))), React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "10px" } }, tabBtn("month", "ดูรายเดือน"), tabBtn("year", "ดูทั้งปี")), React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" } }, React.createElement("div", { style: { fontSize: "13px", color: C.sub } }, mode === "year" ? ("ทั้งปี " + (Number(year) + 543)) : "เดือนที่เลือก"), mode === "year" ?
+        React.createElement("select", { value: year, onChange: (e) => setYear(e.target.value), style: { padding: "9px", borderRadius: "8px", border: "1px solid " + C.line, fontSize: "14px", background: "#fff" } }, years.map((y) => React.createElement("option", { key: y, value: y }, "ปี " + (Number(y) + 543)))) :
+        React.createElement("input", { type: "month", value: period, onChange: (e) => setPeriod(e.target.value), style: { padding: "9px", borderRadius: "8px", border: "1px solid " + C.line, fontSize: "14px" } })), loading ? React.createElement("div", { style: { color: C.sub, textAlign: "center", padding: "20px" } }, "กำลังโหลด...") :
+        React.createElement("div", null, React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "8px" } }, bigStat("มาทำงาน", workDays + " วัน", C.ink), bigStat("ทำ OT", (Math.floor(otMin / 60)) + " ชม " + (otMin % 60) + " น", C.green)), React.createElement("div", { style: { display: "flex", gap: "8px", marginBottom: "8px" } }, bigStat("มาสาย", lateMin + " นาที", lateMin > 0 ? "#b45309" : C.ink), bigStat("ลา", leaveCnt + " ครั้ง", leaveCnt > 0 ? C.blue : C.ink)), React.createElement("div", { style: { display: "flex", gap: "8px" } }, bigStat("ขาดงาน", absent + " ครั้ง", absent > 0 ? C.red : C.ink), React.createElement("div", { style: { flex: 1 } })), leaves.length > 0 ? React.createElement("div", { style: { marginTop: "14px" } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600, marginBottom: "8px" } }, "รายการลา/ขาด"), React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, leaves.map((l) => React.createElement("div", { key: l.id, style: { background: "#fff", borderRadius: "10px", padding: "10px 12px" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, React.createElement("div", { style: { fontSize: "13px", fontWeight: 600 } }, new Date(l.leave_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })), React.createElement("div", { style: { fontSize: "12px", fontWeight: 600, color: l.leave_type === "ขาดงาน" ? C.red : C.blue } }, l.leave_type || "ลา")), l.reason ? React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginTop: "2px" } }, l.reason) : null)))) : null));
 }
 function App() {
     const [session, setSession] = useState(null);
