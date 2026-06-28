@@ -6,6 +6,8 @@
   <title>เช็คอินเข้างาน — ร้านเบเกอรี่บรรจุภัณฑ์</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
@@ -14,6 +16,7 @@
     html, body, #root { height: 100%; margin: 0; }
     body { font-family: "Sarabun","Noto Sans Thai",sans-serif; background:#FAF1E7; }
     * { box-sizing: border-box; }
+    .leaflet-container { font-family: "Sarabun",sans-serif; }
   </style>
   <script>
     window.addEventListener('error', function(e){
@@ -403,29 +406,90 @@ function Branches() {
     const [list, setList] = useState([]);
     const [show, setShow] = useState(false);
     const [msg, setMsg] = useState("");
-    const [f, setF] = useState({ name: "", lat: "", lng: "", radius_m: "150" });
+    const [editId, setEditId] = useState(null);
+    const [f, setF] = useState({ name: "", lat: "", lng: "", radius_m: "80" });
+    const mapRef = useRef(null);
+    const markerRef = useRef(null);
+    const circleRef = useRef(null);
+    const emptyF = { name: "", lat: "", lng: "", radius_m: "80" };
     async function load() { const b = await sb.from("branches").select("*").eq("company_id", COMPANY_ID).order("created_at"); setList(b.data || []); }
     useEffect(() => { load(); }, []);
-    async function add() {
+    function startAdd() { setEditId(null); setF(emptyF); setShow(true); setMsg(""); }
+    function startEdit(b) { setEditId(b.id); setF({ name: b.name || "", lat: b.lat ? String(b.lat) : "", lng: b.lng ? String(b.lng) : "", radius_m: String(b.radius_m || 80) }); setShow(true); setMsg(""); }
+    function cancel() { setShow(false); setEditId(null); setF(emptyF); setMsg(""); if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+        circleRef.current = null;
+    } }
+    async function save() {
         setMsg("");
         if (!f.name) {
             setMsg("กรอกชื่อสาขาก่อน");
             return;
         }
+        if (!f.lat || !f.lng) {
+            setMsg("ปักหมุดหรือใส่พิกัดก่อน");
+            return;
+        }
         try {
-            const ins = await sb.from("branches").insert({ company_id: COMPANY_ID, name: f.name, lat: f.lat ? Number(f.lat) : null, lng: f.lng ? Number(f.lng) : null, radius_m: Number(f.radius_m) || 150 });
-            if (ins.error)
-                throw ins.error;
-            setShow(false);
-            setF({ name: "", lat: "", lng: "", radius_m: "150" });
+            const payload = { company_id: COMPANY_ID, name: f.name, lat: Number(f.lat), lng: Number(f.lng), radius_m: Number(f.radius_m) || 80 };
+            let r;
+            if (editId) {
+                r = await sb.from("branches").update(payload).eq("id", editId);
+            }
+            else {
+                r = await sb.from("branches").insert(payload);
+            }
+            if (r.error)
+                throw r.error;
+            cancel();
             load();
         }
         catch (e) {
-            setMsg("เพิ่มไม่สำเร็จ: " + (e.message || e));
+            setMsg((editId ? "แก้ไข" : "เพิ่ม") + "ไม่สำเร็จ: " + (e.message || e));
         }
     }
-    function useHere() { navigator.geolocation.getCurrentPosition((p) => setF({ ...f, lat: String(p.coords.latitude), lng: String(p.coords.longitude) }), () => setMsg("ดึงพิกัดไม่ได้")); }
-    return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "สาขาทั้งหมด (" + list.length + ")"), React.createElement("button", { onClick: () => setShow(!show), style: { background: C.blue, color: "#fff", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", cursor: "pointer" } }, show ? "ปิด" : "+ เพิ่มสาขา")), show ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, fInput("ชื่อสาขา", f.name, (v) => setF({ ...f, name: v })), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fInput("ละติจูด (lat)", f.lat, (v) => setF({ ...f, lat: v })), fInput("ลองจิจูด (lng)", f.lng, (v) => setF({ ...f, lng: v }))), React.createElement("button", { onClick: useHere, style: { ...bigBtn, background: C.greenLight, color: C.greenInk, marginBottom: "8px" } }, "📍 ใช้พิกัดที่ฉันยืนอยู่ตอนนี้"), fInput("รัศมีอนุญาต (เมตร)", f.radius_m, (v) => setF({ ...f, radius_m: v }), "number"), msg ? React.createElement("div", { style: { color: C.red, fontSize: "13px", margin: "4px 0" } }, msg) : null, React.createElement("button", { onClick: add, style: { ...bigBtn, background: C.blue, color: "#fff", marginTop: "6px" } }, "บันทึกสาขา")) : null, React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.map(b => React.createElement("div", { key: b.id, style: { background: "#fff", borderRadius: "12px", padding: "12px" } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, b.name), React.createElement("div", { style: { fontSize: "12px", color: C.sub } }, b.lat ? ("พิกัด " + Number(b.lat).toFixed(5) + ", " + Number(b.lng).toFixed(5) + " · รัศมี " + b.radius_m + " ม.") : "⚠️ ยังไม่ตั้งพิกัด")))));
+    async function del(b) { if (!window.confirm("ลบสาขา \"" + b.name + "\"?"))
+        return; const r = await sb.from("branches").delete().eq("id", b.id); if (r.error) {
+        setMsg("ลบไม่สำเร็จ: " + r.error.message);
+        return;
+    } load(); }
+    function setPos(lat, lng) { setF((prev) => ({ ...prev, lat: String(lat), lng: String(lng) })); }
+    function useHere() { navigator.geolocation.getCurrentPosition((p) => { setPos(p.coords.latitude, p.coords.longitude); if (mapRef.current)
+        mapRef.current.setView([p.coords.latitude, p.coords.longitude], 17); }, () => setMsg("ดึงพิกัดไม่ได้ — เปิด GPS + อนุญาตตำแหน่ง")); }
+    // สร้างแผนที่เมื่อเปิดฟอร์ม
+    useEffect(() => {
+        if (!show)
+            return;
+        const L = window.L;
+        if (!L)
+            return;
+        const t = setTimeout(() => {
+            const el = document.getElementById("branchmap");
+            if (!el || mapRef.current)
+                return;
+            const lat0 = f.lat ? Number(f.lat) : 16.4333;
+            const lng0 = f.lng ? Number(f.lng) : 103.5060;
+            const z = f.lat ? 17 : 13;
+            const map = L.map("branchmap").setView([lat0, lng0], z);
+            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+            const marker = L.marker([lat0, lng0], { draggable: true }).addTo(map);
+            const circle = L.circle([lat0, lng0], { radius: Number(f.radius_m) || 80, color: "#C76B8E", fillColor: "#C76B8E", fillOpacity: 0.15 }).addTo(map);
+            marker.on("dragend", () => { const ll = marker.getLatLng(); setPos(ll.lat, ll.lng); circle.setLatLng(ll); });
+            map.on("click", (e) => { marker.setLatLng(e.latlng); circle.setLatLng(e.latlng); setPos(e.latlng.lat, e.latlng.lng); });
+            mapRef.current = map;
+            markerRef.current = marker;
+            circleRef.current = circle;
+            if (f.lat)
+                setPos(Number(f.lat), Number(f.lng));
+        }, 200);
+        return () => clearTimeout(t);
+    }, [show]);
+    // อัปเดตวงรัศมีเมื่อแก้เลขรัศมี
+    useEffect(() => { if (circleRef.current)
+        circleRef.current.setRadius(Number(f.radius_m) || 80); }, [f.radius_m]);
+    return React.createElement("div", null, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 600 } }, "สาขาทั้งหมด (" + list.length + ")"), React.createElement("button", { onClick: () => show ? cancel() : startAdd(), style: { background: C.blue, color: "#fff", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", cursor: "pointer" } }, show ? "ปิด" : "+ เพิ่มสาขา")), show ? React.createElement("div", { style: { background: "#fff", borderRadius: "14px", padding: "14px", marginBottom: "12px" } }, React.createElement("div", { style: { fontSize: "15px", fontWeight: 700, marginBottom: "10px", color: editId ? C.green : C.blue } }, editId ? ("✏️ แก้ไขสาขา: " + f.name) : "+ เพิ่มสาขาใหม่"), fInput("ชื่อสาขา", f.name, (v) => setF({ ...f, name: v })), React.createElement("div", { style: { fontSize: "13px", fontWeight: 600, margin: "8px 0 4px" } }, "📍 เลือกตำแหน่งสาขา — ลากหมุด หรือแตะบนแผนที่"), React.createElement("div", { id: "branchmap", style: { width: "100%", height: "260px", borderRadius: "12px", border: "1px solid " + C.line, marginBottom: "8px", zIndex: 0 } }), React.createElement("button", { onClick: useHere, style: { ...bigBtn, background: C.greenLight, color: C.greenInk, marginBottom: "8px" } }, "📍 ใช้ตำแหน่งที่ฉันอยู่ตอนนี้"), React.createElement("div", { style: { display: "flex", gap: "8px" } }, fInput("ละติจูด (lat)", f.lat, (v) => setF({ ...f, lat: v })), fInput("ลองจิจูด (lng)", f.lng, (v) => setF({ ...f, lng: v }))), fInput("รัศมีอนุญาต (เมตร) — แนะนำ 50-80", f.radius_m, (v) => setF({ ...f, radius_m: v }), "number"), msg ? React.createElement("div", { style: { color: msg[0] === "✅" ? C.green : C.red, fontSize: "13px", margin: "4px 0" } }, msg) : null, React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "6px" } }, React.createElement("button", { onClick: save, style: { ...bigBtn, flex: 1, background: C.blue, color: "#fff" } }, editId ? "บันทึกการแก้ไข" : "บันทึกสาขา"), React.createElement("button", { onClick: cancel, style: { ...bigBtn, flex: 0, padding: "14px 18px", background: "#eee", color: C.sub } }, "ยกเลิก"))) : null, React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, list.map(b => React.createElement("div", { key: b.id, style: { background: "#fff", borderRadius: "12px", padding: "12px" } }, React.createElement("div", { style: { fontSize: "14px", fontWeight: 600 } }, b.name), React.createElement("div", { style: { fontSize: "12px", color: C.sub, marginBottom: "8px" } }, b.lat ? ("พิกัด " + Number(b.lat).toFixed(5) + ", " + Number(b.lng).toFixed(5) + " · รัศมี " + b.radius_m + " ม.") : "⚠️ ยังไม่ตั้งพิกัด"), React.createElement("div", { style: { display: "flex", gap: "8px" } }, React.createElement("button", { onClick: () => startEdit(b), style: { flex: 1, padding: "8px", borderRadius: "8px", border: "none", background: C.green, color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer" } }, "✏️ แก้ไข/ตั้งพิกัด"), React.createElement("button", { onClick: () => del(b), style: { padding: "8px 14px", borderRadius: "8px", border: "1px solid " + C.red, background: "#fff", color: C.red, fontSize: "13px", cursor: "pointer" } }, "ลบ"))))));
 }
 function SettingsTab() {
     const [s, setS] = useState(null);
